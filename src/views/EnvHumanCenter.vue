@@ -118,6 +118,16 @@
                 placeholder="选择身份"
               />
             </n-form-item>
+            <n-form-item label="具体人员">
+              <n-select
+                v-model:value="filterCriteria.operatorNames"
+                :options="operatorNameOptions"
+                multiple
+                clearable
+                filterable
+                placeholder="选择人员姓名"
+              />
+            </n-form-item>
             <n-form-item label="操作人数">
               <n-input-number
                 v-model:value="filterOpCountMin"
@@ -678,6 +688,7 @@ const filterCriteria = reactive<EnvHumanFilterCriteria>({
   weather: [],
   windLevel: [],
   operatorRoles: [],
+  operatorNames: [],
   liftingPostures: [],
   abnormalTypes: []
 })
@@ -723,6 +734,14 @@ const schemeOptions = computed(() => {
   return store.schemeList.map(s => ({
     label: s.name,
     value: s.id
+  }))
+})
+
+const operatorNameOptions = computed(() => {
+  const all = store.getDistinctOperators()
+  return all.map(op => ({
+    label: `${op.name}（${OPERATOR_ROLE_OPTIONS.find(r => r.value === op.role)?.label || op.role}）`,
+    value: op.name
   }))
 })
 
@@ -1402,6 +1421,7 @@ function resetFilter() {
   filterCriteria.weather = []
   filterCriteria.windLevel = []
   filterCriteria.operatorRoles = []
+  filterCriteria.operatorNames = []
   filterCriteria.liftingPostures = []
   filterCriteria.hasMaintenance = undefined
   filterCriteria.abnormalTypes = []

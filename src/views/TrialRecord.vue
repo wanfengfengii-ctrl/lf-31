@@ -175,6 +175,175 @@
         <n-form-item label="备注" path="notes">
           <n-input v-model:value="addForm.notes" type="textarea" placeholder="可选：异常情况或备注说明" :rows="2" />
         </n-form-item>
+
+        <n-divider style="margin: 8px 0" />
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px">
+          <span style="font-size: 15px; font-weight: 600; color: #18a058">🌤️ 环境条件记录</span>
+          <n-switch v-model:value="addForm.recordEnvironment" round />
+          <span style="color: #999; font-size: 12px">{{ addForm.recordEnvironment ? '已启用' : '点击启用后填写' }}</span>
+        </div>
+        <div v-if="addForm.recordEnvironment" style="padding-left: 8px">
+          <n-form-item label="天气">
+            <n-select
+              v-model:value="addForm.environmentConditions.weather"
+              :options="WEATHER_OPTIONS"
+              placeholder="请选择天气"
+            />
+          </n-form-item>
+          <n-grid :cols="2" :x-gap="12">
+            <n-form-item label="气温 (℃)">
+              <n-input-number
+                v-model:value="addForm.environmentConditions.temperature"
+                :min="-20" :max="50" :step="0.1"
+                style="width: 100%"
+              />
+            </n-form-item>
+            <n-form-item label="湿度 (%)">
+              <n-input-number
+                v-model:value="addForm.environmentConditions.humidity"
+                :min="0" :max="100" :step="0.1"
+                style="width: 100%"
+              />
+            </n-form-item>
+          </n-grid>
+          <n-form-item label="风力">
+            <n-select
+              v-model:value="addForm.environmentConditions.windLevel"
+              :options="WIND_LEVEL_OPTIONS"
+              placeholder="请选择风力等级"
+            />
+          </n-form-item>
+          <n-form-item label="井水位波动 (cm)">
+            <n-input-number
+              v-model:value="addForm.environmentConditions.waterLevelFluctuation"
+              :min="-100" :max="100" :step="0.1"
+              style="width: 100%"
+            />
+          </n-form-item>
+        </div>
+
+        <n-divider style="margin: 16px 0" />
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px">
+          <span style="font-size: 15px; font-weight: 600; color: #2080f0">👥 人力操作记录</span>
+          <n-switch v-model:value="addForm.recordHuman" round />
+          <span style="color: #999; font-size: 12px">{{ addForm.recordHuman ? '已启用' : '点击启用后填写' }}</span>
+        </div>
+        <div v-if="addForm.recordHuman" style="padding-left: 8px">
+          <n-form-item label="提水姿态">
+            <n-select
+              v-model:value="addForm.humanOperation.liftingPosture"
+              :options="LIFTING_POSTURE_OPTIONS"
+              placeholder="请选择提水姿态"
+            />
+          </n-form-item>
+          <n-grid :cols="2" :x-gap="12">
+            <n-form-item label="操作人数">
+              <n-input-number
+                v-model:value="addForm.humanOperation.operatorCount"
+                :min="1" :max="10" :step="1"
+                style="width: 100%"
+              />
+            </n-form-item>
+            <n-form-item label="中途停顿次数">
+              <n-input-number
+                v-model:value="addForm.humanOperation.midPauseCount"
+                :min="0" :max="20" :step="1"
+                style="width: 100%"
+              />
+            </n-form-item>
+          </n-grid>
+          <n-form-item label="总停顿时长 (秒)">
+            <n-input-number
+              v-model:value="addForm.humanOperation.totalPauseDuration"
+              :min="0" :max="600" :step="1"
+              style="width: 100%"
+            />
+          </n-form-item>
+
+          <n-divider style="margin: 8px 0" />
+          <div style="font-weight: 600; margin-bottom: 8px">操作者信息</div>
+          <n-space vertical :size="8" style="width: 100%">
+            <div
+              v-for="(op, idx) in addForm.humanOperation.operators"
+              :key="op.id"
+              style="display: flex; gap: 8px; align-items: flex-start"
+            >
+              <div style="flex: 1; display: flex; gap: 8px; flex-wrap: wrap">
+                <n-input
+                  v-model:value="op.name"
+                  placeholder="姓名"
+                  style="flex: 1; min-width: 100px"
+                />
+                <n-select
+                  v-model:value="op.role"
+                  :options="OPERATOR_ROLE_OPTIONS"
+                  placeholder="身份"
+                  style="flex: 1; min-width: 120px"
+                />
+                <n-input-number
+                  v-model:value="op.yearsOfExperience"
+                  :min="0" :max="60" :step="1"
+                  placeholder="经验年限"
+                  style="width: 110px"
+                />
+              </div>
+              <n-button size="small" type="default" @click="removeAddOperator(idx)">删除</n-button>
+            </div>
+            <n-button size="small" type="default" @click="addAddOperator">+ 添加操作者</n-button>
+          </n-space>
+
+          <n-divider style="margin: 8px 0" />
+          <div style="font-weight: 600; margin-bottom: 8px">维护干预记录</div>
+          <n-space vertical :size="8" style="width: 100%">
+            <div
+              v-for="(mt, idx) in addForm.humanOperation.maintenanceInterventions"
+              :key="idx"
+              style="display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap"
+            >
+              <n-select
+                v-model:value="mt.type"
+                :options="[
+                  { label: '润滑', value: 'lubrication' },
+                  { label: '调整', value: 'adjustment' },
+                  { label: '修理', value: 'repair' },
+                  { label: '更换', value: 'replacement' },
+                  { label: '清洁', value: 'cleaning' }
+                ]"
+                placeholder="类型"
+                style="width: 100px"
+              />
+              <n-input
+                v-model:value="mt.targetComponent"
+                placeholder="目标构件"
+                style="flex: 1; min-width: 100px"
+              />
+              <n-input-number
+                v-model:value="mt.duration"
+                :min="0" :max="3600" :step="1"
+                placeholder="耗时(秒)"
+                style="width: 100px"
+              />
+              <div style="flex: 2; min-width: 200px; display: flex; gap: 8px">
+                <n-input
+                  v-model:value="mt.description"
+                  placeholder="说明"
+                  style="flex: 1"
+                />
+                <n-button size="small" type="default" @click="removeAddMaintenance(idx)">删除</n-button>
+              </div>
+            </div>
+            <n-button size="small" type="default" @click="addAddMaintenance">+ 添加维护干预</n-button>
+          </n-space>
+
+          <n-form-item label="操作备注" style="margin-top: 12px">
+            <n-input
+              v-model:value="addForm.humanOperation.operationNotes"
+              type="textarea"
+              placeholder="操作过程中的注意事项或特殊情况"
+              :rows="2"
+            />
+          </n-form-item>
+        </div>
       </n-form>
       <template #footer>
         <n-space justify="end">
@@ -256,6 +425,175 @@
         <n-form-item label="备注">
           <n-input v-model:value="editForm.notes" type="textarea" :rows="2" />
         </n-form-item>
+
+        <n-divider style="margin: 8px 0" />
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px">
+          <span style="font-size: 15px; font-weight: 600; color: #18a058">🌤️ 环境条件记录</span>
+          <n-switch v-model:value="editForm.recordEnvironment" round />
+          <span style="color: #999; font-size: 12px">{{ editForm.recordEnvironment ? '已启用' : '点击启用后填写' }}</span>
+        </div>
+        <div v-if="editForm.recordEnvironment" style="padding-left: 8px">
+          <n-form-item label="天气">
+            <n-select
+              v-model:value="editForm.environmentConditions.weather"
+              :options="WEATHER_OPTIONS"
+              placeholder="请选择天气"
+            />
+          </n-form-item>
+          <n-grid :cols="2" :x-gap="12">
+            <n-form-item label="气温 (℃)">
+              <n-input-number
+                v-model:value="editForm.environmentConditions.temperature"
+                :min="-20" :max="50" :step="0.1"
+                style="width: 100%"
+              />
+            </n-form-item>
+            <n-form-item label="湿度 (%)">
+              <n-input-number
+                v-model:value="editForm.environmentConditions.humidity"
+                :min="0" :max="100" :step="0.1"
+                style="width: 100%"
+              />
+            </n-form-item>
+          </n-grid>
+          <n-form-item label="风力">
+            <n-select
+              v-model:value="editForm.environmentConditions.windLevel"
+              :options="WIND_LEVEL_OPTIONS"
+              placeholder="请选择风力等级"
+            />
+          </n-form-item>
+          <n-form-item label="井水位波动 (cm)">
+            <n-input-number
+              v-model:value="editForm.environmentConditions.waterLevelFluctuation"
+              :min="-100" :max="100" :step="0.1"
+              style="width: 100%"
+            />
+          </n-form-item>
+        </div>
+
+        <n-divider style="margin: 16px 0" />
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px">
+          <span style="font-size: 15px; font-weight: 600; color: #2080f0">👥 人力操作记录</span>
+          <n-switch v-model:value="editForm.recordHuman" round />
+          <span style="color: #999; font-size: 12px">{{ editForm.recordHuman ? '已启用' : '点击启用后填写' }}</span>
+        </div>
+        <div v-if="editForm.recordHuman" style="padding-left: 8px">
+          <n-form-item label="提水姿态">
+            <n-select
+              v-model:value="editForm.humanOperation.liftingPosture"
+              :options="LIFTING_POSTURE_OPTIONS"
+              placeholder="请选择提水姿态"
+            />
+          </n-form-item>
+          <n-grid :cols="2" :x-gap="12">
+            <n-form-item label="操作人数">
+              <n-input-number
+                v-model:value="editForm.humanOperation.operatorCount"
+                :min="1" :max="10" :step="1"
+                style="width: 100%"
+              />
+            </n-form-item>
+            <n-form-item label="中途停顿次数">
+              <n-input-number
+                v-model:value="editForm.humanOperation.midPauseCount"
+                :min="0" :max="20" :step="1"
+                style="width: 100%"
+              />
+            </n-form-item>
+          </n-grid>
+          <n-form-item label="总停顿时长 (秒)">
+            <n-input-number
+              v-model:value="editForm.humanOperation.totalPauseDuration"
+              :min="0" :max="600" :step="1"
+              style="width: 100%"
+            />
+          </n-form-item>
+
+          <n-divider style="margin: 8px 0" />
+          <div style="font-weight: 600; margin-bottom: 8px">操作者信息</div>
+          <n-space vertical :size="8" style="width: 100%">
+            <div
+              v-for="(op, idx) in editForm.humanOperation.operators"
+              :key="op.id"
+              style="display: flex; gap: 8px; align-items: flex-start"
+            >
+              <div style="flex: 1; display: flex; gap: 8px; flex-wrap: wrap">
+                <n-input
+                  v-model:value="op.name"
+                  placeholder="姓名"
+                  style="flex: 1; min-width: 100px"
+                />
+                <n-select
+                  v-model:value="op.role"
+                  :options="OPERATOR_ROLE_OPTIONS"
+                  placeholder="身份"
+                  style="flex: 1; min-width: 120px"
+                />
+                <n-input-number
+                  v-model:value="op.yearsOfExperience"
+                  :min="0" :max="60" :step="1"
+                  placeholder="经验年限"
+                  style="width: 110px"
+                />
+              </div>
+              <n-button size="small" type="default" @click="removeEditOperator(idx)">删除</n-button>
+            </div>
+            <n-button size="small" type="default" @click="addEditOperator">+ 添加操作者</n-button>
+          </n-space>
+
+          <n-divider style="margin: 8px 0" />
+          <div style="font-weight: 600; margin-bottom: 8px">维护干预记录</div>
+          <n-space vertical :size="8" style="width: 100%">
+            <div
+              v-for="(mt, idx) in editForm.humanOperation.maintenanceInterventions"
+              :key="idx"
+              style="display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap"
+            >
+              <n-select
+                v-model:value="mt.type"
+                :options="[
+                  { label: '润滑', value: 'lubrication' },
+                  { label: '调整', value: 'adjustment' },
+                  { label: '修理', value: 'repair' },
+                  { label: '更换', value: 'replacement' },
+                  { label: '清洁', value: 'cleaning' }
+                ]"
+                placeholder="类型"
+                style="width: 100px"
+              />
+              <n-input
+                v-model:value="mt.targetComponent"
+                placeholder="目标构件"
+                style="flex: 1; min-width: 100px"
+              />
+              <n-input-number
+                v-model:value="mt.duration"
+                :min="0" :max="3600" :step="1"
+                placeholder="耗时(秒)"
+                style="width: 100px"
+              />
+              <div style="flex: 2; min-width: 200px; display: flex; gap: 8px">
+                <n-input
+                  v-model:value="mt.description"
+                  placeholder="说明"
+                  style="flex: 1"
+                />
+                <n-button size="small" type="default" @click="removeEditMaintenance(idx)">删除</n-button>
+              </div>
+            </div>
+            <n-button size="small" type="default" @click="addEditMaintenance">+ 添加维护干预</n-button>
+          </n-space>
+
+          <n-form-item label="操作备注" style="margin-top: 12px">
+            <n-input
+              v-model:value="editForm.humanOperation.operationNotes"
+              type="textarea"
+              placeholder="操作过程中的注意事项或特殊情况"
+              :rows="2"
+            />
+          </n-form-item>
+        </div>
       </n-form>
       <template #footer>
         <n-space justify="end">
@@ -369,6 +707,32 @@ const emptyAddForm = () => ({
 
 const addForm = ref(emptyAddForm())
 
+function addAddOperator() {
+  addForm.value.humanOperation.operators.push({
+    id: `op_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    name: '',
+    role: 'volunteer' as any,
+    yearsOfExperience: 0
+  })
+}
+
+function removeAddOperator(idx: number) {
+  addForm.value.humanOperation.operators.splice(idx, 1)
+}
+
+function addAddMaintenance() {
+  addForm.value.humanOperation.maintenanceInterventions.push({
+    type: 'lubrication',
+    targetComponent: '',
+    description: '',
+    duration: 0
+  })
+}
+
+function removeAddMaintenance(idx: number) {
+  addForm.value.humanOperation.maintenanceInterventions.splice(idx, 1)
+}
+
 const addRules = {
   timeCost: [
     { required: true, type: 'number', message: '请输入提水耗时', trigger: 'blur' },
@@ -412,6 +776,32 @@ const emptyEditForm = (): TrialRound & { recordEnvironment: boolean; recordHuman
 })
 
 const editForm = ref<TrialRound & { recordEnvironment: boolean; recordHuman: boolean }>(emptyEditForm())
+
+function addEditOperator() {
+  editForm.value.humanOperation.operators.push({
+    id: `op_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    name: '',
+    role: 'volunteer' as any,
+    yearsOfExperience: 0
+  })
+}
+
+function removeEditOperator(idx: number) {
+  editForm.value.humanOperation.operators.splice(idx, 1)
+}
+
+function addEditMaintenance() {
+  editForm.value.humanOperation.maintenanceInterventions.push({
+    type: 'lubrication',
+    targetComponent: '',
+    description: '',
+    duration: 0
+  })
+}
+
+function removeEditMaintenance(idx: number) {
+  editForm.value.humanOperation.maintenanceInterventions.splice(idx, 1)
+}
 
 onMounted(() => {
   schemeStore.setCurrentScheme(schemeId.value)

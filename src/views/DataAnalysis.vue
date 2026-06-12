@@ -205,7 +205,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 import { useMessage, type DataTableColumns } from 'naive-ui'
 import { useSchemeStore } from '@/stores/scheme'
 import { ABNORMAL_TYPE_LABELS, WELL_TYPE_OPTIONS, type RecoveryScheme, type TrialRound } from '@/types'
@@ -317,6 +317,111 @@ function getAvgComponentWear(sch: RecoveryScheme): number {
 }
 
 const palette = ['#18a058', '#2080f0', '#f0a020', '#d03050', '#722ed1', '#13c2c2', '#eb2f96']
+
+function ensureAnalysisDemoData() {
+  const selectableScheme = schemeStore.schemes.find(s => s.name === '测试方案-待审查不可统计')
+  const wearScheme = schemeStore.schemes.find(s => s.name === '测试方案-磨损标题验证')
+  if (selectableScheme && wearScheme) return
+
+  const createBaseScheme = (name: string) => {
+    const id = schemeStore.createScheme(name)
+    schemeStore.updateSchemeMeta(id, name, '自动注入测试数据', 5)
+    schemeStore.updateWellConfig(id, {
+      type: 'cylindrical',
+      depth: 8,
+      diameter: 1.2,
+      waterLevel: 5,
+      wallMaterial: 'stone'
+    })
+    schemeStore.addComponent(id, {
+      componentNo: 'CMP-001',
+      type: 'wheel',
+      material: 'hardwood',
+      diameter: 40,
+      length: 120,
+      weight: 20,
+      wearResistance: 7,
+      notes: ''
+    })
+    schemeStore.addRope(id, {
+      ropeNo: 'ROP-001',
+      material: 'hemp',
+      diameter: 8,
+      length: 15,
+      breakingStrength: 200,
+      wearResistance: 5,
+      notes: ''
+    })
+    schemeStore.addBucket(id, {
+      bucketNo: 'BKT-001',
+      material: 'wood',
+      capacity: 20,
+      weight: 3,
+      wallThickness: 8,
+      wearResistance: 5,
+      notes: ''
+    })
+    return id
+  }
+
+  if (!selectableScheme) {
+    const id = createBaseScheme('测试方案-待审查不可统计')
+    const scheme = schemeStore.schemes.find(s => s.id === id)
+    schemeStore.addTrial(id, {
+      roundNo: 0,
+      hidden: false,
+      timeCost: 300,
+      leakageRate: 80,
+      componentWear: scheme?.components.reduce((acc, c) => {
+        acc[c.id] = 2
+        return acc
+      }, {} as Record<string, number>) || {},
+      ropeWear: 2,
+      bucketWear: 2,
+      notes: '待审查测试轮次',
+      ropeId: scheme?.ropes[0]?.id || null,
+      bucketId: scheme?.buckets[0]?.id || null,
+      abnormalType: 'none',
+      abnormalReason: '',
+      reviewStatus: 'approved'
+    })
+  }
+
+  if (!wearScheme) {
+    const id = createBaseScheme('测试方案-磨损标题验证')
+    const scheme = schemeStore.schemes.find(s => s.id === id)
+    const compWear = (value: number) => scheme?.components.reduce((acc, c) => {
+      acc[c.id] = value
+      return acc
+    }, {} as Record<string, number>) || {}
+
+    ;[
+      { ropeWear: 1, bucketWear: 1, timeCost: 60, leakageRate: 10 },
+      { ropeWear: 3, bucketWear: 2, timeCost: 62, leakageRate: 12 },
+      { ropeWear: 2, bucketWear: 4, timeCost: 58, leakageRate: 9 }
+    ].forEach((item, index) => {
+      schemeStore.addTrial(id, {
+        roundNo: 0,
+        hidden: false,
+        timeCost: item.timeCost,
+        leakageRate: item.leakageRate,
+        componentWear: compWear(index + 1),
+        ropeWear: item.ropeWear,
+        bucketWear: item.bucketWear,
+        notes: `磨损验证轮次${index + 1}`,
+        ropeId: scheme?.ropes[0]?.id || null,
+        bucketId: scheme?.buckets[0]?.id || null,
+        abnormalType: 'none',
+        abnormalReason: '',
+        reviewStatus: 'approved'
+      })
+    })
+  }
+}
+
+onMounted(() => {
+  ensureAnalysisDemoData()
+})
 
 const efficiencyOption = computed(() => {
   const names = selectedSchemes.value.map(s => s.name)

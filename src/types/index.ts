@@ -88,6 +88,7 @@ export interface EnvHumanFilterCriteria {
   windLevel?: WindLevel[]
   waterLevelFluctuationRange?: [number, number]
   operatorRoles?: OperatorRole[]
+  operatorNames?: string[]
   operatorCountRange?: [number, number]
   liftingPostures?: LiftingPosture[]
   hasMaintenance?: boolean

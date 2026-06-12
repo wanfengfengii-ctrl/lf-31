@@ -1320,6 +1320,12 @@ export const useSchemeStore = defineStore('scheme', () => {
         return ops.some(op => criteria.operatorRoles!.includes(op.role))
       })
     }
+    if (criteria.operatorNames && criteria.operatorNames.length > 0) {
+      result = result.filter(r => {
+        const ops = r.trial.humanOperation?.operators || []
+        return ops.some(op => criteria.operatorNames!.includes(op.name))
+      })
+    }
     if (criteria.operatorCountRange) {
       const [min, max] = criteria.operatorCountRange
       result = result.filter(r => {
@@ -1511,12 +1517,20 @@ export const useSchemeStore = defineStore('scheme', () => {
       '天气', '气温(℃)', '湿度(%)', '风力等级', '井水位波动(cm)',
       '操作人数', '操作者姓名', '操作者身份',
       '提水姿态', '中途停顿次数', '累计停顿时长(秒)',
-      '是否有维护干预', '维护次数', '操作备注',
+      '是否有维护干预', '维护次数', '维护干预明细', '操作备注',
       '提水耗时(秒)', '漏水率(%)', '效率(L/s)',
       '井绳磨损', '汲桶磨损', '平均构件磨损',
       '异常类型', '异常原因', '审查状态'
     ]
     rows.push(headers.join(','))
+
+    const MAINTENANCE_TYPE_LABELS: Record<string, string> = {
+      lubrication: '润滑',
+      adjustment: '调整',
+      repair: '修理',
+      replacement: '更换',
+      cleaning: '清洁'
+    }
 
     data.forEach(({ scheme, trial }) => {
       const bucket = scheme.buckets[0]
@@ -1537,6 +1551,11 @@ export const useSchemeStore = defineStore('scheme', () => {
       const opRoles = human?.operators?.map(o => OPERATOR_ROLE_OPTIONS.find(r => r.value === o.role)?.label || o.role).join('、') || '-'
       const maintenanceCount = human?.maintenanceInterventions?.length || 0
       const hasMaintenance = maintenanceCount > 0 ? '是' : '否'
+      const maintenanceDetail = human?.maintenanceInterventions?.length
+        ? human.maintenanceInterventions.map(m =>
+          `[${MAINTENANCE_TYPE_LABELS[m.type] || m.type}] ${m.targetComponent || '-'} | ${m.duration}秒 | ${m.description || ''}`
+        ).join('；')
+        : '-'
 
       const row = [
         scheme.name,
@@ -1555,6 +1574,7 @@ export const useSchemeStore = defineStore('scheme', () => {
         human?.totalPauseDuration ?? '-',
         hasMaintenance,
         maintenanceCount,
+        maintenanceDetail,
         human?.operationNotes || '-',
         trial.timeCost,
         trial.leakageRate,
