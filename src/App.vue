@@ -61,21 +61,44 @@ const menuOptions: MenuOption[] = [
     icon: () => '📋'
   },
   {
-    label: '数据分析',
+    label: '试验模板',
+    key: 'templates',
+    icon: () => '📑'
+  },
+  {
+    label: '审查中心',
+    key: 'review',
+    icon: () => '🔍'
+  },
+  {
+    label: '知识图谱与决策中心',
     key: 'analysis',
-    icon: () => '📊'
+    icon: () => '🕸️'
+  },
+  {
+    label: '环境与人力中心',
+    key: 'env-human',
+    icon: () => '🌤️'
   }
 ]
 
 const showBackBtn = computed(() => {
-  return route.name === 'SchemeConfig' || route.name === 'Trials'
+  return route.name === 'SchemeConfig' || route.name === 'Trials' || route.name === 'TemplateConfig'
 })
 
 watch(route, () => {
   if (route.path.startsWith('/scheme/')) {
     activeMenu.value = 'schemes'
+  } else if (route.path.startsWith('/template/')) {
+    activeMenu.value = 'templates'
+  } else if (route.path === '/templates') {
+    activeMenu.value = 'templates'
+  } else if (route.path === '/review') {
+    activeMenu.value = 'review'
   } else if (route.path === '/analysis') {
     activeMenu.value = 'analysis'
+  } else if (route.path === '/env-human') {
+    activeMenu.value = 'env-human'
   } else {
     activeMenu.value = 'schemes'
   }
@@ -84,13 +107,23 @@ watch(route, () => {
 function handleMenuClick(key: string | number) {
   if (key === 'schemes') {
     router.push('/schemes')
+  } else if (key === 'templates') {
+    router.push('/templates')
+  } else if (key === 'review') {
+    router.push('/review')
   } else if (key === 'analysis') {
     router.push('/analysis')
+  } else if (key === 'env-human') {
+    router.push('/env-human')
   }
 }
 
 function goBack() {
-  router.push('/schemes')
+  if (route.name === 'TemplateConfig') {
+    router.push('/templates')
+  } else {
+    router.push('/schemes')
+  }
 }
 </script>
 
