@@ -857,9 +857,9 @@ export const useSchemeStore = defineStore('scheme', () => {
     const avgEfficiency = bucket ? (bucket.capacity * (1 - avgLeakage / 100)) / avgTimeCost : 0
 
     const totalTrials = scheme.trials.length
-    const abnormalCount = scheme.trials.filter(t => t.abnormalType !== 'none').length
-    const pendingCount = scheme.trials.filter(t => t.reviewStatus === 'pending').length
-    const rejectedCount = scheme.trials.filter(t => t.reviewStatus === 'rejected').length
+    const abnormalCount = approvedTrials.filter(t => t.abnormalType !== 'none').length
+    const pendingCount = scheme.trials.filter(t => !t.hidden && t.reviewStatus === 'pending' && t.abnormalType !== 'none').length
+    const rejectedCount = scheme.trials.filter(t => !t.hidden && t.reviewStatus === 'rejected').length
 
     return {
       avgTimeCost,
@@ -872,7 +872,7 @@ export const useSchemeStore = defineStore('scheme', () => {
       abnormalCount,
       pendingCount,
       rejectedCount,
-      abnormalRate: totalTrials > 0 ? (abnormalCount / totalTrials) * 100 : 0
+      abnormalRate: approvedTrials.length > 0 ? (abnormalCount / approvedTrials.length) * 100 : 0
     }
   }
 
@@ -1074,6 +1074,7 @@ export const useSchemeStore = defineStore('scheme', () => {
 
   function getGlobalAbnormalStats() {
     let totalTrials = 0
+    let approvedTrials = 0
     let abnormalTrials = 0
     let pendingReviews = 0
     let approvedReviews = 0
@@ -1082,14 +1083,19 @@ export const useSchemeStore = defineStore('scheme', () => {
 
     schemes.value.forEach(s => {
       s.trials.forEach(t => {
+        if (t.hidden) return
         totalTrials++
-        if (t.abnormalType !== 'none') {
-          abnormalTrials++
-          abnormalByType[t.abnormalType] = (abnormalByType[t.abnormalType] || 0) + 1
+        if (t.reviewStatus === 'approved') {
+          approvedTrials++
+          if (t.abnormalType !== 'none') {
+            abnormalTrials++
+            abnormalByType[t.abnormalType] = (abnormalByType[t.abnormalType] || 0) + 1
+          } else {
+            abnormalByType.none = (abnormalByType.none || 0) + 1
+          }
+          approvedReviews++
         }
-        abnormalByType.none = totalTrials - abnormalTrials
         if (t.reviewStatus === 'pending' && t.abnormalType !== 'none') pendingReviews++
-        if (t.reviewStatus === 'approved') approvedReviews++
         if (t.reviewStatus === 'rejected') rejectedReviews++
       })
     })
@@ -1097,7 +1103,7 @@ export const useSchemeStore = defineStore('scheme', () => {
     return {
       totalTrials,
       abnormalTrials,
-      abnormalRate: totalTrials > 0 ? (abnormalTrials / totalTrials) * 100 : 0,
+      abnormalRate: approvedTrials > 0 ? (abnormalTrials / approvedTrials) * 100 : 0,
       pendingReviews,
       approvedReviews,
       rejectedReviews,

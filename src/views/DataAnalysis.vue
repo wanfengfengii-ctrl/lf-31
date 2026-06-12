@@ -721,29 +721,40 @@ function getSingleWearOption(sch: RecoveryScheme) {
   const labels = trials.map(t => `第${t.roundNo}轮`)
   const comps = sch.components
 
-  const series: any[] = comps.map((c, i) => ({
-    name: `${c.componentNo}`,
-    type: 'line',
-    stack: 'wear',
-    smooth: true,
-    data: trials.map(t => Number((t.componentWear[c.id] || 0).toFixed(2))),
-    itemStyle: { color: palette[i % palette.length] }
-  }))
+  const series: any[] = comps.map((c, i) => {
+    let cumulative = 0
+    return {
+      name: `${c.componentNo}`,
+      type: 'line',
+      smooth: true,
+      data: trials.map(t => {
+        cumulative += (t.componentWear[c.id] || 0)
+        return Number(cumulative.toFixed(2))
+      }),
+      itemStyle: { color: palette[i % palette.length] }
+    }
+  })
 
+  let ropeCum = 0
   series.push({
     name: '井绳',
     type: 'line',
-    stack: 'wear',
     smooth: true,
-    data: trials.map(t => t.ropeWear),
+    data: trials.map(t => {
+      ropeCum += t.ropeWear
+      return Number(ropeCum.toFixed(2))
+    }),
     itemStyle: { color: '#000000' }
   })
+  let bucketCum = 0
   series.push({
     name: '汲桶',
     type: 'line',
-    stack: 'wear',
     smooth: true,
-    data: trials.map(t => t.bucketWear),
+    data: trials.map(t => {
+      bucketCum += t.bucketWear
+      return Number(bucketCum.toFixed(2))
+    }),
     itemStyle: { color: '#722ed1' }
   })
 
@@ -752,7 +763,7 @@ function getSingleWearOption(sch: RecoveryScheme) {
     legend: { type: 'scroll', top: 0 },
     grid: { left: '3%', right: '4%', bottom: '3%', top: 50, containLabel: true },
     xAxis: { type: 'category', data: labels },
-    yAxis: { type: 'value', name: '磨损等级' },
+    yAxis: { type: 'value', name: '累计磨损等级' },
     series
   }
 }

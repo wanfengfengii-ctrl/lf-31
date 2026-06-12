@@ -582,11 +582,31 @@ function handleGenerate() {
       return
     }
 
+    const scheme = schemeStore.schemes.find(s => s.id === schemeId)
+    if (!scheme) {
+      message.error('方案不存在')
+      return
+    }
+
+    let mappedRopeId: string | null = null
+    let mappedBucketId: string | null = null
+
+    if (generateForm.value.defaultRopeId) {
+      const tplRopeNo = generateForm.value.defaultRopeId.replace('tpl-rope-', '')
+      const found = scheme.ropes.find(r => r.ropeNo === tplRopeNo)
+      mappedRopeId = found?.id || scheme.ropes[0]?.id || null
+    }
+    if (generateForm.value.defaultBucketId) {
+      const tplBucketNo = generateForm.value.defaultBucketId.replace('tpl-bucket-', '')
+      const found = scheme.buckets.find(b => b.bucketNo === tplBucketNo)
+      mappedBucketId = found?.id || scheme.buckets[0]?.id || null
+    }
+
     const res = schemeStore.generateStandardRounds(
       schemeId,
       generateForm.value.roundCount,
-      null,
-      null
+      mappedRopeId,
+      mappedBucketId
     )
     if (res.success) {
       message.success(`已基于模板创建方案并生成 ${res.generated} 个标准轮次`)
