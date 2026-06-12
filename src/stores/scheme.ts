@@ -283,12 +283,82 @@ export const useSchemeStore = defineStore('scheme', () => {
     return schemes.value.filter(s => ids.includes(s.id))
   }
 
+  function validateComponent(c: any): boolean {
+    if (!c || typeof c !== 'object') return false
+    if (typeof c.id !== 'string' || typeof c.componentNo !== 'string' || typeof c.type !== 'string') return false
+    if (typeof c.material !== 'string' || typeof c.wearResistance !== 'number') return false
+    if (c.diameter !== undefined && typeof c.diameter !== 'number') return false
+    if (c.length !== undefined && typeof c.length !== 'number') return false
+    if (c.weight !== undefined && typeof c.weight !== 'number') return false
+    if (c.notes !== undefined && typeof c.notes !== 'string') return false
+    return true
+  }
+
+  function validateRope(r: any): boolean {
+    if (!r || typeof r !== 'object') return false
+    if (typeof r.id !== 'string' || typeof r.ropeNo !== 'string' || typeof r.material !== 'string') return false
+    if (typeof r.diameter !== 'number' || typeof r.length !== 'number') return false
+    if (typeof r.breakingStrength !== 'number' || typeof r.wearResistance !== 'number') return false
+    if (r.notes !== undefined && typeof r.notes !== 'string') return false
+    return true
+  }
+
+  function validateBucket(b: any): boolean {
+    if (!b || typeof b !== 'object') return false
+    if (typeof b.id !== 'string' || typeof b.bucketNo !== 'string' || typeof b.material !== 'string') return false
+    if (typeof b.capacity !== 'number' || typeof b.weight !== 'number') return false
+    if (typeof b.wearResistance !== 'number') return false
+    if (b.wallThickness !== undefined && typeof b.wallThickness !== 'number') return false
+    if (b.notes !== undefined && typeof b.notes !== 'string') return false
+    return true
+  }
+
+  function validateWellConfig(w: any): boolean {
+    if (w === null) return true
+    if (!w || typeof w !== 'object') return false
+    if (typeof w.type !== 'string') return false
+    if (typeof w.depth !== 'number' || typeof w.diameter !== 'number' || typeof w.waterLevel !== 'number') return false
+    if (w.wallMaterial !== undefined && typeof w.wallMaterial !== 'string') return false
+    return true
+  }
+
+  function validateTrial(t: any): boolean {
+    if (!t || typeof t !== 'object') return false
+    if (typeof t.roundNo !== 'number' || typeof t.hidden !== 'boolean') return false
+    if (typeof t.timeCost !== 'number' || t.timeCost < 0 || isNaN(t.timeCost)) return false
+    if (typeof t.leakageRate !== 'number' || t.leakageRate < 0 || t.leakageRate > 100 || isNaN(t.leakageRate)) return false
+    if (!t.componentWear || typeof t.componentWear !== 'object' || Array.isArray(t.componentWear)) return false
+    for (const k of Object.keys(t.componentWear)) {
+      if (typeof t.componentWear[k] !== 'number') return false
+    }
+    if (typeof t.ropeWear !== 'number' || typeof t.bucketWear !== 'number') return false
+    if (typeof t.createdAt !== 'number') return false
+    if (t.notes !== undefined && typeof t.notes !== 'string') return false
+    return true
+  }
+
   function validateSchemeData(data: any): data is RecoveryScheme {
     if (!data || typeof data !== 'object') return false
     if (typeof data.id !== 'string' || typeof data.name !== 'string') return false
+    if (data.name.trim().length === 0) return false
+    if (data.description !== undefined && typeof data.description !== 'string') return false
+    if (!validateWellConfig(data.wellConfig)) return false
     if (!Array.isArray(data.components) || !Array.isArray(data.ropes) || !Array.isArray(data.buckets)) return false
     if (!Array.isArray(data.trials)) return false
     if (typeof data.totalRounds !== 'number' || typeof data.completedRounds !== 'number') return false
+    if (data.totalRounds < 0 || data.completedRounds < 0) return false
+    if (typeof data.assemblyComplete !== 'boolean') return false
+    if (typeof data.createdAt !== 'number' || typeof data.updatedAt !== 'number') return false
+    if (!data.components.every(validateComponent)) return false
+    if (!data.ropes.every(validateRope)) return false
+    if (!data.buckets.every(validateBucket)) return false
+    if (!data.trials.every(validateTrial)) return false
+    const compNos = data.components.map((c: any) => c.componentNo)
+    if (new Set(compNos).size !== compNos.length) return false
+    const ropeNos = data.ropes.map((r: any) => r.ropeNo)
+    if (new Set(ropeNos).size !== ropeNos.length) return false
+    const bucketNos = data.buckets.map((b: any) => b.bucketNo)
+    if (new Set(bucketNos).size !== bucketNos.length) return false
     return true
   }
 

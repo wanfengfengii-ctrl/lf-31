@@ -85,8 +85,13 @@ const createRules = {
     { min: 2, max: 50, message: '名称长度应为 2-50 字符', trigger: 'blur' }
   ],
   totalRounds: [
-    { required: true, message: '请输入试验轮次', trigger: 'blur' },
-    { type: 'number', min: 1, message: '试验轮次至少为 1', trigger: 'change' }
+    {
+      validator: (_rule: any, value: any) => {
+        return typeof value === 'number' && !isNaN(value) && value >= 1
+      },
+      message: '试验轮次至少为 1',
+      trigger: ['blur', 'change']
+    }
   ]
 }
 

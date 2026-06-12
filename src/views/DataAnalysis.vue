@@ -13,20 +13,26 @@
           <div style="font-weight: 600; margin-bottom: 8px">选择要对比的方案（至少1个，建议≤5个）：</div>
           <n-space style="flex-wrap: wrap">
             <n-checkbox
-              v-for="s in availableSchemes"
+              v-for="s in availableSchemesList"
               :key="s.id"
               v-model:checked="checkedIds"
               :value="s.id"
-              :label="`${s.name} (${s.completedRounds}/${s.totalRounds}轮)`"
+              :disabled="!s.hasVisibleTrials"
+              :label="s.hasVisibleTrials
+                ? `${s.name} (${s.visibleRounds}/${s.completedRounds}轮)`
+                : `${s.name} (${s.completedRounds}轮 - 全部已隐藏)`"
             />
-            <n-tag v-if="availableSchemes.length === 0" type="warning">
+            <n-tag v-if="availableSchemesList.length === 0" type="warning">
               暂无带试验记录的方案，请先进行汲水试验
             </n-tag>
           </n-space>
         </div>
 
-        <n-alert v-if="selectedSchemes.length === 0" type="info" :show-icon="true">
-          请选择至少 1 个有试验记录的方案进行分析。
+        <n-alert v-if="selectedSchemes.length === 0 && checkedIds.length > 0" type="warning" :show-icon="true">
+          ⚠️ 您勾选的方案已全部隐藏轮次，请先在试验记录中取消隐藏至少1轮再分析。
+        </n-alert>
+        <n-alert v-if="checkedIds.length === 0" type="info" :show-icon="true">
+          请选择至少 1 个有可见试验轮次的方案进行分析。
         </n-alert>
       </n-space>
     </n-card>
@@ -93,7 +99,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { DataTableColumns } from 'naive-ui'
 import { useSchemeStore } from '@/stores/scheme'
 import type { RecoveryScheme, TrialRound } from '@/types'
@@ -102,9 +108,40 @@ const schemeStore = useSchemeStore()
 
 const checkedIds = ref<string[]>([])
 
-const availableSchemes = computed(() => {
-  return schemeStore.schemeList.filter(s => s.hasTrials)
+interface AvailableSchemeItem {
+  id: string
+  name: string
+  completedRounds: number
+  totalRounds: number
+  visibleRounds: number
+  hasVisibleTrials: boolean
+}
+
+const availableSchemesList = computed<AvailableSchemeItem[]>(() => {
+  const list: AvailableSchemeItem[] = []
+  schemeStore.schemes.forEach(s => {
+    if (s.trials.length > 0) {
+      const visibleRounds = s.trials.filter(t => !t.hidden).length
+      list.push({
+        id: s.id,
+        name: s.name,
+        completedRounds: s.completedRounds,
+        totalRounds: s.totalRounds,
+        visibleRounds,
+        hasVisibleTrials: visibleRounds > 0
+      })
+    }
+  })
+  return list
 })
+
+watch(availableSchemesList, (list) => {
+  const enabledIds = list.filter(s => s.hasVisibleTrials).map(s => s.id)
+  const cleaned = checkedIds.value.filter(id => enabledIds.includes(id))
+  if (cleaned.length !== checkedIds.value.length) {
+    checkedIds.value = cleaned
+  }
+}, { immediate: true, deep: true })
 
 const selectedSchemes = computed((): RecoveryScheme[] => {
   return schemeStore.schemes.filter(s =>
