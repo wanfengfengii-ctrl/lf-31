@@ -74,6 +74,11 @@ const menuOptions: MenuOption[] = [
     label: '分析中心',
     key: 'analysis',
     icon: () => '📊'
+  },
+  {
+    label: '环境与人力中心',
+    key: 'env-human',
+    icon: () => '🌤️'
   }
 ]
 
@@ -92,6 +97,8 @@ watch(route, () => {
     activeMenu.value = 'review'
   } else if (route.path === '/analysis') {
     activeMenu.value = 'analysis'
+  } else if (route.path === '/env-human') {
+    activeMenu.value = 'env-human'
   } else {
     activeMenu.value = 'schemes'
   }
@@ -106,6 +113,8 @@ function handleMenuClick(key: string | number) {
     router.push('/review')
   } else if (key === 'analysis') {
     router.push('/analysis')
+  } else if (key === 'env-human') {
+    router.push('/env-human')
   }
 }
 

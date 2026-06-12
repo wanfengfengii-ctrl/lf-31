@@ -272,7 +272,25 @@ import { ref, computed, h, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage, useDialog, type DataTableColumns, type SelectOption } from 'naive-ui'
 import { useSchemeStore } from '@/stores/scheme'
-import { COMPONENT_TYPE_OPTIONS, ABNORMAL_TYPE_LABELS, REVIEW_STATUS_LABELS, type TrialRound, type ReviewStatus } from '@/types'
+import {
+  COMPONENT_TYPE_OPTIONS,
+  ABNORMAL_TYPE_LABELS,
+  REVIEW_STATUS_LABELS,
+  WEATHER_OPTIONS,
+  WIND_LEVEL_OPTIONS,
+  OPERATOR_ROLE_OPTIONS,
+  LIFTING_POSTURE_OPTIONS,
+  type TrialRound,
+  type ReviewStatus,
+  type WeatherType,
+  type WindLevel,
+  type OperatorRole,
+  type LiftingPosture,
+  type EnvironmentConditions,
+  type HumanOperationRecord,
+  type OperatorInfo,
+  type MaintenanceIntervention
+} from '@/types'
 
 const schemeStore = useSchemeStore()
 const message = useMessage()
@@ -315,6 +333,24 @@ const initWearMap = () => {
   return m
 }
 
+const emptyEnv = (): EnvironmentConditions => ({
+  weather: 'sunny' as WeatherType,
+  temperature: 25,
+  humidity: 60,
+  windLevel: 'calm' as WindLevel,
+  waterLevelFluctuation: 0
+})
+
+const emptyHuman = (): HumanOperationRecord => ({
+  operatorCount: 1,
+  operators: [] as OperatorInfo[],
+  liftingPosture: 'standing_two_hand' as LiftingPosture,
+  midPauseCount: 0,
+  totalPauseDuration: 0,
+  maintenanceInterventions: [] as MaintenanceIntervention[],
+  operationNotes: ''
+})
+
 const emptyAddForm = () => ({
   hidden: false,
   timeCost: 0,
@@ -324,7 +360,11 @@ const emptyAddForm = () => ({
   bucketWear: 0,
   notes: '',
   ropeId: null as string | null,
-  bucketId: null as string | null
+  bucketId: null as string | null,
+  environmentConditions: emptyEnv(),
+  humanOperation: emptyHuman(),
+  recordEnvironment: false,
+  recordHuman: false
 })
 
 const addForm = ref(emptyAddForm())
@@ -350,7 +390,7 @@ const addRules = {
 
 const editRules = { ...addRules }
 
-const emptyEditForm = (): TrialRound => ({
+const emptyEditForm = (): TrialRound & { recordEnvironment: boolean; recordHuman: boolean } => ({
   roundNo: 0,
   hidden: false,
   timeCost: 0,
@@ -364,10 +404,14 @@ const emptyEditForm = (): TrialRound => ({
   bucketId: null,
   abnormalType: 'none',
   abnormalReason: '',
-  reviewStatus: 'approved'
+  reviewStatus: 'approved',
+  environmentConditions: emptyEnv(),
+  humanOperation: emptyHuman(),
+  recordEnvironment: false,
+  recordHuman: false
 })
 
-const editForm = ref<TrialRound>(emptyEditForm())
+const editForm = ref<TrialRound & { recordEnvironment: boolean; recordHuman: boolean }>(emptyEditForm())
 
 onMounted(() => {
   schemeStore.setCurrentScheme(schemeId.value)
@@ -389,7 +433,7 @@ function openAddModal() {
 function handleAddTrial() {
   addFormRef.value?.validate((errors: any) => {
     if (!errors && scheme.value) {
-      const res = schemeStore.addTrial(scheme.value.id, {
+      const trialData: any = {
         roundNo: 0,
         hidden: addForm.value.hidden,
         timeCost: addForm.value.timeCost,
@@ -403,7 +447,18 @@ function handleAddTrial() {
         abnormalType: 'none',
         abnormalReason: '',
         reviewStatus: 'approved'
-      })
+      }
+      if (addForm.value.recordEnvironment) {
+        trialData.environmentConditions = { ...addForm.value.environmentConditions }
+      }
+      if (addForm.value.recordHuman) {
+        trialData.humanOperation = {
+          ...addForm.value.humanOperation,
+          operators: [...addForm.value.humanOperation.operators],
+          maintenanceInterventions: [...addForm.value.humanOperation.maintenanceInterventions]
+        }
+      }
+      const res = schemeStore.addTrial(scheme.value.id, trialData)
       if (res.success) {
         message.success('试验记录已保存')
         showAddModal.value = false
@@ -430,7 +485,15 @@ function handleEdit(row: TrialRound) {
     bucketId: row.bucketId,
     abnormalType: row.abnormalType,
     abnormalReason: row.abnormalReason,
-    reviewStatus: row.reviewStatus
+    reviewStatus: row.reviewStatus,
+    environmentConditions: row.environmentConditions ? { ...row.environmentConditions } : emptyEnv(),
+    humanOperation: row.humanOperation ? {
+      ...row.humanOperation,
+      operators: row.humanOperation.operators ? [...row.humanOperation.operators] : [],
+      maintenanceInterventions: row.humanOperation.maintenanceInterventions ? [...row.humanOperation.maintenanceInterventions] : []
+    } : emptyHuman(),
+    recordEnvironment: !!row.environmentConditions,
+    recordHuman: !!row.humanOperation
   }
   showEditModal.value = true
 }
@@ -438,7 +501,7 @@ function handleEdit(row: TrialRound) {
 function handleEditTrial() {
   editFormRef.value?.validate((errors: any) => {
     if (!errors && scheme.value) {
-      const res = schemeStore.updateTrial(scheme.value.id, editingRoundNo.value, {
+      const updateData: any = {
         hidden: editForm.value.hidden,
         timeCost: editForm.value.timeCost,
         leakageRate: editForm.value.leakageRate,
@@ -448,7 +511,22 @@ function handleEditTrial() {
         notes: editForm.value.notes,
         ropeId: editForm.value.ropeId,
         bucketId: editForm.value.bucketId
-      })
+      }
+      if (editForm.value.recordEnvironment) {
+        updateData.environmentConditions = { ...editForm.value.environmentConditions }
+      } else {
+        updateData.environmentConditions = undefined
+      }
+      if (editForm.value.recordHuman) {
+        updateData.humanOperation = {
+          ...editForm.value.humanOperation,
+          operators: [...editForm.value.humanOperation.operators],
+          maintenanceInterventions: [...editForm.value.humanOperation.maintenanceInterventions]
+        }
+      } else {
+        updateData.humanOperation = undefined
+      }
+      const res = schemeStore.updateTrial(scheme.value.id, editingRoundNo.value, updateData)
       if (res.success) {
         message.success('修改已保存')
         showEditModal.value = false

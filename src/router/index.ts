@@ -39,6 +39,11 @@ const routes: RouteRecordRaw[] = [
     path: '/analysis',
     name: 'Analysis',
     component: () => import('@/views/DataAnalysis.vue')
+  },
+  {
+    path: '/env-human',
+    name: 'EnvHuman',
+    component: () => import('@/views/EnvHumanCenter.vue')
   }
 ]
 

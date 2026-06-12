@@ -13,9 +13,22 @@ import type {
   AbnormalRuleConfig,
   ReviewStatus,
   TemplateFilterCriteria,
-  TraceableTrialDetail
+  TraceableTrialDetail,
+  EnvHumanFilterCriteria,
+  WeatherType,
+  WindLevel,
+  OperatorRole,
+  LiftingPosture
 } from '@/types'
-import { DEFAULT_ABNORMAL_RULES, ABNORMAL_TYPE_LABELS, REVIEW_STATUS_LABELS } from '@/types'
+import {
+  DEFAULT_ABNORMAL_RULES,
+  ABNORMAL_TYPE_LABELS,
+  REVIEW_STATUS_LABELS,
+  WEATHER_OPTIONS,
+  WIND_LEVEL_OPTIONS,
+  OPERATOR_ROLE_OPTIONS,
+  LIFTING_POSTURE_OPTIONS
+} from '@/types'
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substr(2, 9)
@@ -1252,6 +1265,328 @@ export const useSchemeStore = defineStore('scheme', () => {
     }).filter(Boolean)
   }
 
+  function getAllEnvHumanTrials(): Array<{ scheme: RecoveryScheme; trial: TrialRound }> {
+    const result: Array<{ scheme: RecoveryScheme; trial: TrialRound }> = []
+    schemes.value.forEach(s => {
+      s.trials.forEach(t => {
+        if (!t.hidden) {
+          result.push({ scheme: s, trial: t })
+        }
+      })
+    })
+    result.sort((a, b) => b.trial.createdAt - a.trial.createdAt)
+    return result
+  }
+
+  function filterEnvHumanTrials(criteria: EnvHumanFilterCriteria): Array<{ scheme: RecoveryScheme; trial: TrialRound }> {
+    let result = getAllEnvHumanTrials()
+
+    if (criteria.schemeIds && criteria.schemeIds.length > 0) {
+      result = result.filter(r => criteria.schemeIds!.includes(r.scheme.id))
+    }
+    if (criteria.roundNos && criteria.roundNos.length > 0) {
+      result = result.filter(r => criteria.roundNos!.includes(r.trial.roundNo))
+    }
+    if (criteria.weather && criteria.weather.length > 0) {
+      result = result.filter(r => r.trial.environmentConditions && criteria.weather!.includes(r.trial.environmentConditions.weather))
+    }
+    if (criteria.temperatureRange) {
+      const [min, max] = criteria.temperatureRange
+      result = result.filter(r => {
+        const t = r.trial.environmentConditions?.temperature
+        return t !== undefined && t >= min && t <= max
+      })
+    }
+    if (criteria.humidityRange) {
+      const [min, max] = criteria.humidityRange
+      result = result.filter(r => {
+        const h = r.trial.environmentConditions?.humidity
+        return h !== undefined && h >= min && h <= max
+      })
+    }
+    if (criteria.windLevel && criteria.windLevel.length > 0) {
+      result = result.filter(r => r.trial.environmentConditions && criteria.windLevel!.includes(r.trial.environmentConditions.windLevel))
+    }
+    if (criteria.waterLevelFluctuationRange) {
+      const [min, max] = criteria.waterLevelFluctuationRange
+      result = result.filter(r => {
+        const w = r.trial.environmentConditions?.waterLevelFluctuation
+        return w !== undefined && w >= min && w <= max
+      })
+    }
+    if (criteria.operatorRoles && criteria.operatorRoles.length > 0) {
+      result = result.filter(r => {
+        const ops = r.trial.humanOperation?.operators || []
+        return ops.some(op => criteria.operatorRoles!.includes(op.role))
+      })
+    }
+    if (criteria.operatorCountRange) {
+      const [min, max] = criteria.operatorCountRange
+      result = result.filter(r => {
+        const c = r.trial.humanOperation?.operatorCount
+        return c !== undefined && c >= min && c <= max
+      })
+    }
+    if (criteria.liftingPostures && criteria.liftingPostures.length > 0) {
+      result = result.filter(r => r.trial.humanOperation && criteria.liftingPostures!.includes(r.trial.humanOperation.liftingPosture))
+    }
+    if (criteria.hasMaintenance !== undefined) {
+      result = result.filter(r => {
+        const m = r.trial.humanOperation?.maintenanceInterventions?.length || 0
+        return criteria.hasMaintenance ? m > 0 : m === 0
+      })
+    }
+    if (criteria.abnormalTypes && criteria.abnormalTypes.length > 0) {
+      result = result.filter(r => criteria.abnormalTypes!.includes(r.trial.abnormalType))
+    }
+
+    return result
+  }
+
+  function getEnvHumanStats(criteria: EnvHumanFilterCriteria) {
+    const filtered = filterEnvHumanTrials(criteria)
+    const approved = filtered.filter(r => r.trial.reviewStatus === 'approved')
+
+    let totalTimeCost = 0
+    let totalLeakageRate = 0
+    let totalRopeWear = 0
+    let totalBucketWear = 0
+    let totalEfficiency = 0
+    let abnormalCount = 0
+    let totalCompWear = 0
+    let compWearCount = 0
+
+    approved.forEach(({ scheme, trial }) => {
+      totalTimeCost += trial.timeCost
+      totalLeakageRate += trial.leakageRate
+      totalRopeWear += trial.ropeWear
+      totalBucketWear += trial.bucketWear
+      if (trial.abnormalType !== 'none') abnormalCount++
+      const vals = Object.values(trial.componentWear)
+      if (vals.length > 0) {
+        totalCompWear += vals.reduce((a, b) => a + b, 0) / vals.length
+        compWearCount++
+      }
+      const bucket = scheme.buckets[0]
+      if (bucket && trial.timeCost > 0) {
+        totalEfficiency += (bucket.capacity * (1 - trial.leakageRate / 100)) / trial.timeCost
+      }
+    })
+
+    const count = approved.length
+    return {
+      totalTrials: filtered.length,
+      approvedTrials: count,
+      abnormalTrials: abnormalCount,
+      abnormalRate: count > 0 ? (abnormalCount / count) * 100 : 0,
+      avgTimeCost: count > 0 ? totalTimeCost / count : 0,
+      avgLeakageRate: count > 0 ? totalLeakageRate / count : 0,
+      avgRopeWear: count > 0 ? totalRopeWear / count : 0,
+      avgBucketWear: count > 0 ? totalBucketWear / count : 0,
+      avgComponentWear: compWearCount > 0 ? totalCompWear / compWearCount : 0,
+      avgEfficiency: count > 0 ? totalEfficiency / count : 0
+    }
+  }
+
+  function getEnvHumanCrossStats(criteria: EnvHumanFilterCriteria, dimension: 'weather' | 'windLevel' | 'liftingPosture' | 'operatorRole' | 'operatorCount') {
+    const filtered = filterEnvHumanTrials(criteria)
+    const approved = filtered.filter(r => r.trial.reviewStatus === 'approved')
+
+    const groups: Record<string, Array<{ scheme: RecoveryScheme; trial: TrialRound }>> = {}
+
+    approved.forEach(item => {
+      let key = ''
+      switch (dimension) {
+        case 'weather':
+          key = item.trial.environmentConditions?.weather || 'unknown'
+          break
+        case 'windLevel':
+          key = item.trial.environmentConditions?.windLevel || 'unknown'
+          break
+        case 'liftingPosture':
+          key = item.trial.humanOperation?.liftingPosture || 'unknown'
+          break
+        case 'operatorRole': {
+          const roles = item.trial.humanOperation?.operators?.map(o => o.role) || []
+          key = roles.length > 0 ? roles.join(',') : 'unknown'
+          break
+        }
+        case 'operatorCount':
+          key = String(item.trial.humanOperation?.operatorCount || 0)
+          break
+      }
+      if (!groups[key]) groups[key] = []
+      groups[key].push(item)
+    })
+
+    const result: Array<{
+      key: string
+      label: string
+      count: number
+      avgTimeCost: number
+      avgLeakageRate: number
+      avgEfficiency: number
+      avgRopeWear: number
+      avgBucketWear: number
+      abnormalRate: number
+    }> = []
+
+    Object.entries(groups).forEach(([key, items]) => {
+      let totalTime = 0, totalLeak = 0, totalEff = 0, totalRope = 0, totalBucket = 0, abnormal = 0
+      items.forEach(({ scheme, trial }) => {
+        totalTime += trial.timeCost
+        totalLeak += trial.leakageRate
+        totalRope += trial.ropeWear
+        totalBucket += trial.bucketWear
+        if (trial.abnormalType !== 'none') abnormal++
+        const bucket = scheme.buckets[0]
+        if (bucket && trial.timeCost > 0) {
+          totalEff += (bucket.capacity * (1 - trial.leakageRate / 100)) / trial.timeCost
+        }
+      })
+      const c = items.length
+      let label = key
+      if (dimension === 'weather') {
+        label = WEATHER_OPTIONS.find(o => o.value === key)?.label || key
+      } else if (dimension === 'windLevel') {
+        label = WIND_LEVEL_OPTIONS.find(o => o.value === key)?.label || key
+      } else if (dimension === 'liftingPosture') {
+        label = LIFTING_POSTURE_OPTIONS.find(o => o.value === key)?.label || key
+      } else if (dimension === 'operatorRole') {
+        label = key.split(',').map(r => OPERATOR_ROLE_OPTIONS.find(o => o.value === r)?.label || r).join('、')
+      }
+      result.push({
+        key,
+        label,
+        count: c,
+        avgTimeCost: c > 0 ? totalTime / c : 0,
+        avgLeakageRate: c > 0 ? totalLeak / c : 0,
+        avgEfficiency: c > 0 ? totalEff / c : 0,
+        avgRopeWear: c > 0 ? totalRope / c : 0,
+        avgBucketWear: c > 0 ? totalBucket / c : 0,
+        abnormalRate: c > 0 ? (abnormal / c) * 100 : 0
+      })
+    })
+
+    return result.sort((a, b) => b.count - a.count)
+  }
+
+  function getEnvHumanTrendData(criteria: EnvHumanFilterCriteria) {
+    const filtered = filterEnvHumanTrials(criteria)
+    const approved = filtered.filter(r => r.trial.reviewStatus === 'approved')
+    approved.sort((a, b) => a.trial.createdAt - b.trial.createdAt)
+
+    const labels: string[] = []
+    const efficiency: number[] = []
+    const timeCost: number[] = []
+    const leakageRate: number[] = []
+    const ropeWear: number[] = []
+    const bucketWear: number[] = []
+    const temperature: number[] = []
+    const humidity: number[] = []
+
+    approved.forEach(({ scheme, trial }) => {
+      labels.push(`${scheme.name} 第${trial.roundNo}轮`)
+      timeCost.push(Number(trial.timeCost.toFixed(2)))
+      leakageRate.push(Number(trial.leakageRate.toFixed(2)))
+      ropeWear.push(Number(trial.ropeWear.toFixed(2)))
+      bucketWear.push(Number(trial.bucketWear.toFixed(2)))
+      const bucket = scheme.buckets[0]
+      const eff = bucket && trial.timeCost > 0
+        ? (bucket.capacity * (1 - trial.leakageRate / 100)) / trial.timeCost
+        : 0
+      efficiency.push(Number(eff.toFixed(3)))
+      temperature.push(trial.environmentConditions?.temperature ?? 0)
+      humidity.push(trial.environmentConditions?.humidity ?? 0)
+    })
+
+    return { labels, efficiency, timeCost, leakageRate, ropeWear, bucketWear, temperature, humidity }
+  }
+
+  function exportEnvHumanDetails(criteria?: EnvHumanFilterCriteria): string {
+    const data = criteria ? filterEnvHumanTrials(criteria) : getAllEnvHumanTrials()
+    const rows: string[] = []
+    const headers = [
+      '方案名称', '轮次', '记录时间',
+      '天气', '气温(℃)', '湿度(%)', '风力等级', '井水位波动(cm)',
+      '操作人数', '操作者姓名', '操作者身份',
+      '提水姿态', '中途停顿次数', '累计停顿时长(秒)',
+      '是否有维护干预', '维护次数', '操作备注',
+      '提水耗时(秒)', '漏水率(%)', '效率(L/s)',
+      '井绳磨损', '汲桶磨损', '平均构件磨损',
+      '异常类型', '异常原因', '审查状态'
+    ]
+    rows.push(headers.join(','))
+
+    data.forEach(({ scheme, trial }) => {
+      const bucket = scheme.buckets[0]
+      const effectiveWater = bucket ? bucket.capacity * (1 - trial.leakageRate / 100) : 0
+      const efficiency = trial.timeCost > 0 ? effectiveWater / trial.timeCost : 0
+      const compVals = Object.values(trial.componentWear)
+      const avgCompWear = compVals.length > 0
+        ? compVals.reduce((a, b) => a + b, 0) / compVals.length
+        : 0
+
+      const env = trial.environmentConditions
+      const human = trial.humanOperation
+
+      const weatherLabel = env ? (WEATHER_OPTIONS.find(o => o.value === env.weather)?.label || '-') : '-'
+      const windLabel = env ? (WIND_LEVEL_OPTIONS.find(o => o.value === env.windLevel)?.label || '-') : '-'
+      const postureLabel = human ? (LIFTING_POSTURE_OPTIONS.find(o => o.value === human.liftingPosture)?.label || '-') : '-'
+      const opNames = human?.operators?.map(o => o.name).join('、') || '-'
+      const opRoles = human?.operators?.map(o => OPERATOR_ROLE_OPTIONS.find(r => r.value === o.role)?.label || o.role).join('、') || '-'
+      const maintenanceCount = human?.maintenanceInterventions?.length || 0
+      const hasMaintenance = maintenanceCount > 0 ? '是' : '否'
+
+      const row = [
+        scheme.name,
+        trial.roundNo,
+        new Date(trial.createdAt).toLocaleString('zh-CN'),
+        weatherLabel,
+        env?.temperature ?? '-',
+        env?.humidity ?? '-',
+        windLabel,
+        env?.waterLevelFluctuation ?? '-',
+        human?.operatorCount ?? '-',
+        opNames,
+        opRoles,
+        postureLabel,
+        human?.midPauseCount ?? '-',
+        human?.totalPauseDuration ?? '-',
+        hasMaintenance,
+        maintenanceCount,
+        human?.operationNotes || '-',
+        trial.timeCost,
+        trial.leakageRate,
+        efficiency.toFixed(3),
+        trial.ropeWear,
+        trial.bucketWear,
+        avgCompWear.toFixed(2),
+        ABNORMAL_TYPE_LABELS[trial.abnormalType],
+        trial.abnormalReason || '-',
+        REVIEW_STATUS_LABELS[trial.reviewStatus]
+      ]
+      rows.push(row.map(v => `"${v}"`).join(','))
+    })
+
+    return '\uFEFF' + rows.join('\n')
+  }
+
+  function getDistinctOperators(): Array<{ id: string; name: string; role: OperatorRole }> {
+    const map = new Map<string, { id: string; name: string; role: OperatorRole }>()
+    schemes.value.forEach(s => {
+      s.trials.forEach(t => {
+        t.humanOperation?.operators?.forEach(op => {
+          const key = `${op.name}_${op.role}`
+          if (!map.has(key)) {
+            map.set(key, { id: op.id, name: op.name, role: op.role })
+          }
+        })
+      })
+    })
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+  }
+
   return {
     schemes,
     templates,
@@ -1323,6 +1658,13 @@ export const useSchemeStore = defineStore('scheme', () => {
     getGlobalAbnormalStats,
     getGlobalCumulativeWear,
     exportTraceableDetails,
-    getTemplateComparisonDetail
+    getTemplateComparisonDetail,
+    getAllEnvHumanTrials,
+    filterEnvHumanTrials,
+    getEnvHumanStats,
+    getEnvHumanCrossStats,
+    getEnvHumanTrendData,
+    exportEnvHumanDetails,
+    getDistinctOperators
   }
 })
