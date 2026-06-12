@@ -54,6 +54,34 @@
     </n-modal>
 
     <input ref="importInputRef" type="file" accept=".json" style="display: none" @change="handleImportFile" />
+
+    <n-modal
+      v-model:show="showSaveTemplateModal"
+      preset="card"
+      title="保存方案为试验模板"
+      style="width: 520px"
+    >
+      <n-form ref="saveTemplateFormRef" :model="saveTemplateForm" :rules="saveTemplateRules" label-placement="left" label-width="100px">
+        <n-form-item label="模板名称" path="name">
+          <n-input v-model:value="saveTemplateForm.name" placeholder="请输入模板名称" />
+        </n-form-item>
+        <n-form-item label="模板描述" path="description">
+          <n-input v-model:value="saveTemplateForm.description" type="textarea" placeholder="可选：简述模板特点或适用场景" :rows="3" />
+        </n-form-item>
+        <n-form-item label="标签" path="tag">
+          <n-input v-model:value="saveTemplateForm.tag" placeholder="可选：如 标准试验、快速测试 等" />
+        </n-form-item>
+        <n-alert type="info" :show-icon="true">
+          将基于当前方案的井型配置、辘轳构件、井绳、汲桶及异常规则创建为可复用模板。
+        </n-alert>
+      </n-form>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="showSaveTemplateModal = false">取消</n-button>
+          <n-button type="primary" @click="handleSaveAsTemplate">保存为模板</n-button>
+        </n-space>
+      </template>
+    </n-modal>
   </div>
 </template>
 

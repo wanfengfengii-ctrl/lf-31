@@ -6,8 +6,16 @@ import type {
   RopeConfig,
   BucketConfig,
   TrialRound,
-  SchemeImportResult
+  SchemeImportResult,
+  TrialTemplate,
+  TemplateImportResult,
+  AbnormalType,
+  AbnormalRuleConfig,
+  ReviewStatus,
+  TemplateFilterCriteria,
+  TraceableTrialDetail
 } from '@/types'
+import { DEFAULT_ABNORMAL_RULES, ABNORMAL_TYPE_LABELS, REVIEW_STATUS_LABELS } from '@/types'
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substr(2, 9)
@@ -28,12 +36,33 @@ function createEmptyScheme(name: string): RecoveryScheme {
     trials: [],
     assemblyComplete: false,
     createdAt: now,
-    updatedAt: now
+    updatedAt: now,
+    abnormalRules: { ...DEFAULT_ABNORMAL_RULES }
+  }
+}
+
+function createEmptyTemplate(name: string): TrialTemplate {
+  const now = Date.now()
+  return {
+    id: generateId(),
+    name,
+    description: '',
+    wellConfig: null,
+    components: [],
+    ropes: [],
+    buckets: [],
+    totalRounds: 10,
+    abnormalRules: { ...DEFAULT_ABNORMAL_RULES },
+    tag: '',
+    createdAt: now,
+    updatedAt: now,
+    usageCount: 0
   }
 }
 
 export const useSchemeStore = defineStore('scheme', () => {
   const schemes = ref<RecoveryScheme[]>([])
+  const templates = ref<TrialTemplate[]>([])
   const currentSchemeId = ref<string | null>(null)
 
   const currentScheme = computed(() => {
@@ -51,7 +80,26 @@ export const useSchemeStore = defineStore('scheme', () => {
       hasTrials: s.trials.length > 0,
       assemblyComplete: s.assemblyComplete,
       createdAt: s.createdAt,
-      updatedAt: s.updatedAt
+      updatedAt: s.updatedAt,
+      templateId: s.templateId,
+      pendingReviewCount: s.trials.filter(t => t.reviewStatus === 'pending' && t.abnormalType !== 'none').length
+    }))
+  })
+
+  const templateList = computed(() => {
+    return templates.value.map(t => ({
+      id: t.id,
+      name: t.name,
+      description: t.description,
+      tag: t.tag,
+      componentCount: t.components.length,
+      ropeCount: t.ropes.length,
+      bucketCount: t.buckets.length,
+      hasWellConfig: !!t.wellConfig,
+      totalRounds: t.totalRounds,
+      usageCount: t.usageCount,
+      createdAt: t.createdAt,
+      updatedAt: t.updatedAt
     }))
   })
 
@@ -225,6 +273,67 @@ export const useSchemeStore = defineStore('scheme', () => {
     return typeof value === 'number' && value >= 0 && value <= 100 && !isNaN(value)
   }
 
+  function detectAbnormal(
+    trial: Omit<TrialRound, 'createdAt' | 'roundNo'>,
+    rules: AbnormalRuleConfig,
+    prevTrials: TrialRound[]
+  ): { type: AbnormalType; reason: string } {
+    const reasons: string[] = []
+
+    if (trial.timeCost > rules.timeoutThreshold) {
+      reasons.push(`提水耗时 ${trial.timeCost}s 超过阈值 ${rules.timeoutThreshold}s`)
+    }
+
+    if (trial.leakageRate > rules.highLeakageThreshold) {
+      reasons.push(`漏水率 ${trial.leakageRate}% 超过阈值 ${rules.highLeakageThreshold}%`)
+    }
+
+    if (prevTrials.length > 0) {
+      const avgPrevRopeWear = prevTrials.reduce((sum, t) => sum + t.ropeWear, 0) / prevTrials.length
+      const avgPrevBucketWear = prevTrials.reduce((sum, t) => sum + t.bucketWear, 0) / prevTrials.length
+      const compIds = Object.keys(trial.componentWear)
+      let avgPrevCompWear = 0
+      if (compIds.length > 0) {
+        const totalCompWear = prevTrials.reduce((sum, t) => {
+          const vals = Object.values(t.componentWear)
+          return sum + (vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0)
+        }, 0)
+        avgPrevCompWear = totalCompWear / prevTrials.length
+      }
+      const currentAvgCompWear = compIds.length > 0
+        ? Object.values(trial.componentWear).reduce((a, b) => a + b, 0) / compIds.length
+        : 0
+
+      const ropeWearIncrease = trial.ropeWear - avgPrevRopeWear
+      const bucketWearIncrease = trial.bucketWear - avgPrevBucketWear
+      const compWearIncrease = currentAvgCompWear - avgPrevCompWear
+
+      if (ropeWearIncrease > rules.wearSpikeThreshold ||
+          bucketWearIncrease > rules.wearSpikeThreshold ||
+          compWearIncrease > rules.wearSpikeThreshold) {
+        reasons.push(`磨损突增超过阈值 ${rules.wearSpikeThreshold} 级`)
+      }
+    }
+
+    if (reasons.length === 0) {
+      return { type: 'none', reason: '' }
+    }
+
+    let type: AbnormalType = 'none'
+    if (trial.timeCost > rules.timeoutThreshold &&
+        trial.leakageRate > rules.highLeakageThreshold) {
+      type = 'highLeakage'
+    } else if (trial.timeCost > rules.timeoutThreshold) {
+      type = 'timeout'
+    } else if (trial.leakageRate > rules.highLeakageThreshold) {
+      type = 'highLeakage'
+    } else {
+      type = 'wearSpike'
+    }
+
+    return { type, reason: reasons.join('；') }
+  }
+
   function addTrial(schemeId: string, trial: Omit<TrialRound, 'createdAt'>): { success: boolean; error?: string } {
     const scheme = schemes.value.find(s => s.id === schemeId)
     if (!scheme) return { success: false, error: '方案不存在' }
@@ -233,10 +342,16 @@ export const useSchemeStore = defineStore('scheme', () => {
     if (!isValidTimeCost(trial.timeCost)) return { success: false, error: '提水耗时不能小于 0' }
     if (!isValidLeakageRate(trial.leakageRate)) return { success: false, error: '漏水率必须在 0-100 范围内' }
 
+    const prevTrials = scheme.trials.filter(t => t.reviewStatus === 'approved' || t.reviewStatus === 'pending')
+    const abnormalResult = detectAbnormal(trial, scheme.abnormalRules, prevTrials)
+
     const roundNo = scheme.trials.length + 1
     const newTrial: TrialRound = {
       ...trial,
       roundNo,
+      abnormalType: abnormalResult.type,
+      abnormalReason: abnormalResult.reason,
+      reviewStatus: abnormalResult.type === 'none' ? 'approved' : 'pending',
       createdAt: Date.now()
     }
     scheme.trials.push(newTrial)
@@ -256,7 +371,23 @@ export const useSchemeStore = defineStore('scheme', () => {
     if (data.leakageRate !== undefined && !isValidLeakageRate(data.leakageRate)) {
       return { success: false, error: '漏水率必须在 0-100 范围内' }
     }
-    Object.assign(trial, data)
+
+    const prevTrials = scheme.trials.filter(t => t.roundNo !== roundNo && (t.reviewStatus === 'approved' || t.reviewStatus === 'pending'))
+    const { roundNo: _rn, createdAt: _ct, ...mergedWithoutMeta } = { ...trial, ...data }
+    const abnormalResult = detectAbnormal(
+      mergedWithoutMeta,
+      scheme.abnormalRules,
+      prevTrials
+    )
+
+    const finalData: Partial<TrialRound> = {
+      ...data,
+      abnormalType: abnormalResult.type,
+      abnormalReason: abnormalResult.reason,
+      reviewStatus: abnormalResult.type === 'none' ? 'approved' : (data.reviewStatus || 'pending')
+    }
+
+    Object.assign(trial, finalData)
     scheme.updatedAt = Date.now()
     return { success: true }
   }
@@ -277,6 +408,78 @@ export const useSchemeStore = defineStore('scheme', () => {
     const scheme = schemes.value.find(s => s.id === schemeId)
     if (!scheme) return []
     return scheme.trials.filter(t => !t.hidden)
+  }
+
+  function getApprovedTrials(schemeId: string): TrialRound[] {
+    const scheme = schemes.value.find(s => s.id === schemeId)
+    if (!scheme) return []
+    return scheme.trials.filter(t => !t.hidden && t.reviewStatus === 'approved')
+  }
+
+  function getPendingReviewTrials(schemeId: string): TrialRound[] {
+    const scheme = schemes.value.find(s => s.id === schemeId)
+    if (!scheme) return []
+    return scheme.trials.filter(t => t.reviewStatus === 'pending' && t.abnormalType !== 'none')
+  }
+
+  function getAllPendingReviews(): Array<{ schemeId: string; schemeName: string; trial: TrialRound }> {
+    const result: Array<{ schemeId: string; schemeName: string; trial: TrialRound }> = []
+    schemes.value.forEach(s => {
+      s.trials.forEach(t => {
+        if (t.reviewStatus === 'pending' && t.abnormalType !== 'none') {
+          result.push({ schemeId: s.id, schemeName: s.name, trial: t })
+        }
+      })
+    })
+    return result
+  }
+
+  function reviewTrial(schemeId: string, roundNo: number, status: ReviewStatus, reviewer: string, comment: string): boolean {
+    const scheme = schemes.value.find(s => s.id === schemeId)
+    if (!scheme) return false
+    const trial = scheme.trials.find(t => t.roundNo === roundNo)
+    if (!trial) return false
+    trial.reviewStatus = status
+    trial.reviewer = reviewer
+    trial.reviewComment = comment
+    trial.reviewedAt = Date.now()
+    scheme.updatedAt = Date.now()
+    return true
+  }
+
+  function getRopeById(schemeId: string, ropeId: string): RopeConfig | undefined {
+    const scheme = schemes.value.find(s => s.id === schemeId)
+    if (!scheme) return undefined
+    return scheme.ropes.find(r => r.id === ropeId)
+  }
+
+  function getBucketById(schemeId: string, bucketId: string): BucketConfig | undefined {
+    const scheme = schemes.value.find(s => s.id === schemeId)
+    if (!scheme) return undefined
+    return scheme.buckets.find(b => b.id === bucketId)
+  }
+
+  function updateAbnormalRules(schemeId: string, rules: AbnormalRuleConfig) {
+    const scheme = schemes.value.find(s => s.id === schemeId)
+    if (!scheme) return
+    scheme.abnormalRules = { ...rules }
+    scheme.trials.forEach(trial => {
+      const prevTrials = scheme!.trials.filter(
+        t => t.roundNo < trial.roundNo && (t.reviewStatus === 'approved' || t.reviewStatus === 'pending')
+      )
+      const { roundNo: _rn2, createdAt: _ct2, ...trialWithoutMeta } = trial
+      const abnormalResult = detectAbnormal(
+        trialWithoutMeta,
+        rules,
+        prevTrials
+      )
+      trial.abnormalType = abnormalResult.type
+      trial.abnormalReason = abnormalResult.reason
+      if (trial.reviewStatus === 'pending' && abnormalResult.type === 'none') {
+        trial.reviewStatus = 'approved'
+      }
+    })
+    scheme.updatedAt = Date.now()
   }
 
   function exportSchemes(ids: string[]): RecoveryScheme[] {
@@ -409,28 +612,647 @@ export const useSchemeStore = defineStore('scheme', () => {
     }
   }
 
+  function createTemplate(name: string): string {
+    const template = createEmptyTemplate(name)
+    templates.value.push(template)
+    return template.id
+  }
+
+  function saveSchemeAsTemplate(schemeId: string, templateName: string, description: string, tag: string): string | null {
+    const scheme = schemes.value.find(s => s.id === schemeId)
+    if (!scheme) return null
+
+    const components = scheme.components.map(c => {
+      const { id, ...rest } = c
+      return rest
+    })
+    const ropes = scheme.ropes.map(r => {
+      const { id, ...rest } = r
+      return rest
+    })
+    const buckets = scheme.buckets.map(b => {
+      const { id, ...rest } = b
+      return rest
+    })
+
+    const template: TrialTemplate = {
+      id: generateId(),
+      name: templateName,
+      description,
+      wellConfig: scheme.wellConfig ? { ...scheme.wellConfig } : null,
+      components,
+      ropes,
+      buckets,
+      totalRounds: scheme.totalRounds,
+      abnormalRules: { ...scheme.abnormalRules },
+      tag,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      usageCount: 0
+    }
+
+    templates.value.push(template)
+    return template.id
+  }
+
+  function createSchemeFromTemplate(templateId: string, schemeName: string): string | null {
+    const template = templates.value.find(t => t.id === templateId)
+    if (!template) return null
+
+    const scheme = createEmptyScheme(schemeName)
+    scheme.description = template.description || ''
+    scheme.wellConfig = template.wellConfig ? { ...template.wellConfig } : null
+    scheme.components = template.components.map(c => ({ ...c, id: generateId() }))
+    scheme.ropes = template.ropes.map(r => ({ ...r, id: generateId() }))
+    scheme.buckets = template.buckets.map(b => ({ ...b, id: generateId() }))
+    scheme.totalRounds = template.totalRounds
+    scheme.abnormalRules = { ...template.abnormalRules }
+    scheme.templateId = template.id
+    scheme.assemblyComplete = !!scheme.wellConfig &&
+      scheme.components.length > 0 &&
+      scheme.ropes.length > 0 &&
+      scheme.buckets.length > 0
+
+    template.usageCount++
+    template.updatedAt = Date.now()
+
+    schemes.value.push(scheme)
+    return scheme.id
+  }
+
+  function updateTemplateMeta(id: string, name: string, description: string, tag: string, totalRounds: number) {
+    const template = templates.value.find(t => t.id === id)
+    if (!template) return
+    template.name = name
+    template.description = description
+    template.tag = tag
+    template.totalRounds = totalRounds
+    template.updatedAt = Date.now()
+  }
+
+  function deleteTemplate(id: string): boolean {
+    const idx = templates.value.findIndex(t => t.id === id)
+    if (idx === -1) return false
+    templates.value.splice(idx, 1)
+    return true
+  }
+
+  function getTemplate(id: string): TrialTemplate | null {
+    return templates.value.find(t => t.id === id) || null
+  }
+
+  function updateTemplateWellConfig(templateId: string, config: TrialTemplate['wellConfig']) {
+    const template = templates.value.find(t => t.id === templateId)
+    if (!template) return
+    template.wellConfig = config
+    template.updatedAt = Date.now()
+  }
+
+  function addTemplateComponent(templateId: string, component: Omit<ComponentConfig, 'id'>) {
+    const template = templates.value.find(t => t.id === templateId)
+    if (!template) return
+    template.components.push(component)
+    template.updatedAt = Date.now()
+  }
+
+  function updateTemplateComponent(templateId: string, index: number, data: Partial<Omit<ComponentConfig, 'id'>>) {
+    const template = templates.value.find(t => t.id === templateId)
+    if (!template || !template.components[index]) return
+    Object.assign(template.components[index], data)
+    template.updatedAt = Date.now()
+  }
+
+  function removeTemplateComponent(templateId: string, index: number) {
+    const template = templates.value.find(t => t.id === templateId)
+    if (!template) return
+    template.components.splice(index, 1)
+    template.updatedAt = Date.now()
+  }
+
+  function addTemplateRope(templateId: string, rope: Omit<RopeConfig, 'id'>) {
+    const template = templates.value.find(t => t.id === templateId)
+    if (!template) return
+    template.ropes.push(rope)
+    template.updatedAt = Date.now()
+  }
+
+  function updateTemplateRope(templateId: string, index: number, data: Partial<Omit<RopeConfig, 'id'>>) {
+    const template = templates.value.find(t => t.id === templateId)
+    if (!template || !template.ropes[index]) return
+    Object.assign(template.ropes[index], data)
+    template.updatedAt = Date.now()
+  }
+
+  function removeTemplateRope(templateId: string, index: number) {
+    const template = templates.value.find(t => t.id === templateId)
+    if (!template) return
+    template.ropes.splice(index, 1)
+    template.updatedAt = Date.now()
+  }
+
+  function addTemplateBucket(templateId: string, bucket: Omit<BucketConfig, 'id'>) {
+    const template = templates.value.find(t => t.id === templateId)
+    if (!template) return
+    template.buckets.push(bucket)
+    template.updatedAt = Date.now()
+  }
+
+  function updateTemplateBucket(templateId: string, index: number, data: Partial<Omit<BucketConfig, 'id'>>) {
+    const template = templates.value.find(t => t.id === templateId)
+    if (!template || !template.buckets[index]) return
+    Object.assign(template.buckets[index], data)
+    template.updatedAt = Date.now()
+  }
+
+  function removeTemplateBucket(templateId: string, index: number) {
+    const template = templates.value.find(t => t.id === templateId)
+    if (!template) return
+    template.buckets.splice(index, 1)
+    template.updatedAt = Date.now()
+  }
+
+  function updateTemplateAbnormalRules(templateId: string, rules: AbnormalRuleConfig) {
+    const template = templates.value.find(t => t.id === templateId)
+    if (!template) return
+    template.abnormalRules = { ...rules }
+    template.updatedAt = Date.now()
+  }
+
+  function validateTemplateData(data: any): data is TrialTemplate {
+    if (!data || typeof data !== 'object') return false
+    if (typeof data.id !== 'string' || typeof data.name !== 'string') return false
+    if (data.name.trim().length === 0) return false
+    if (!validateWellConfig(data.wellConfig)) return false
+    if (!Array.isArray(data.components) || !Array.isArray(data.ropes) || !Array.isArray(data.buckets)) return false
+    if (typeof data.totalRounds !== 'number') return false
+    if (typeof data.createdAt !== 'number' || typeof data.updatedAt !== 'number') return false
+    if (typeof data.usageCount !== 'number') return false
+    return true
+  }
+
+  function exportTemplates(ids: string[]): TrialTemplate[] {
+    return templates.value.filter(t => ids.includes(t.id))
+  }
+
+  function importTemplates(jsonData: string, overwrite: boolean = false): TemplateImportResult {
+    try {
+      const parsed = JSON.parse(jsonData)
+      let incoming: any[] = []
+      if (Array.isArray(parsed)) {
+        incoming = parsed
+      } else if (validateTemplateData(parsed)) {
+        incoming = [parsed]
+      } else {
+        return { success: false, templates: [], error: '数据格式无效：不是有效的模板文件' }
+      }
+
+      const validTemplates: TrialTemplate[] = []
+      for (const item of incoming) {
+        if (validateTemplateData(item)) {
+          validTemplates.push(item as TrialTemplate)
+        }
+      }
+
+      if (validTemplates.length === 0) {
+        return { success: false, templates: [], error: '没有有效的模板数据可导入' }
+      }
+
+      if (!overwrite) {
+        validTemplates.forEach(t => {
+          t.id = generateId()
+          t.createdAt = Date.now()
+          t.updatedAt = Date.now()
+          t.usageCount = 0
+          templates.value.push(t)
+        })
+      } else {
+        validTemplates.forEach(t => {
+          const existingIdx = templates.value.findIndex(x => x.name === t.name)
+          if (existingIdx !== -1) {
+            templates.value[existingIdx] = { ...t, updatedAt: Date.now() }
+          } else {
+            templates.value.push({ ...t, createdAt: Date.now(), updatedAt: Date.now() })
+          }
+        })
+      }
+
+      return { success: true, templates: validTemplates }
+    } catch (e) {
+      return { success: false, templates: [], error: '解析失败：JSON 格式不正确' }
+    }
+  }
+
   function getSchemeStats(schemeId: string) {
     const scheme = schemes.value.find(s => s.id === schemeId)
     if (!scheme) return null
-    const visibleTrials = scheme.trials.filter(t => !t.hidden)
-    if (visibleTrials.length === 0) return null
+    const approvedTrials = scheme.trials.filter(t => !t.hidden && t.reviewStatus === 'approved')
+    if (approvedTrials.length === 0) return null
 
-    const avgTimeCost = visibleTrials.reduce((sum, t) => sum + t.timeCost, 0) / visibleTrials.length
-    const avgLeakage = visibleTrials.reduce((sum, t) => sum + t.leakageRate, 0) / visibleTrials.length
-    const avgRopeWear = visibleTrials.reduce((sum, t) => sum + t.ropeWear, 0) / visibleTrials.length
-    const avgBucketWear = visibleTrials.reduce((sum, t) => sum + t.bucketWear, 0) / visibleTrials.length
+    const avgTimeCost = approvedTrials.reduce((sum, t) => sum + t.timeCost, 0) / approvedTrials.length
+    const avgLeakage = approvedTrials.reduce((sum, t) => sum + t.leakageRate, 0) / approvedTrials.length
+    const avgRopeWear = approvedTrials.reduce((sum, t) => sum + t.ropeWear, 0) / approvedTrials.length
+    const avgBucketWear = approvedTrials.reduce((sum, t) => sum + t.bucketWear, 0) / approvedTrials.length
 
     const bucket = scheme.buckets[0]
     const avgEfficiency = bucket ? (bucket.capacity * (1 - avgLeakage / 100)) / avgTimeCost : 0
 
-    return { avgTimeCost, avgLeakage, avgRopeWear, avgBucketWear, avgEfficiency, visibleCount: visibleTrials.length }
+    const totalTrials = scheme.trials.length
+    const abnormalCount = scheme.trials.filter(t => t.abnormalType !== 'none').length
+    const pendingCount = scheme.trials.filter(t => t.reviewStatus === 'pending').length
+    const rejectedCount = scheme.trials.filter(t => t.reviewStatus === 'rejected').length
+
+    return {
+      avgTimeCost,
+      avgLeakage,
+      avgRopeWear,
+      avgBucketWear,
+      avgEfficiency,
+      visibleCount: approvedTrials.length,
+      totalTrials,
+      abnormalCount,
+      pendingCount,
+      rejectedCount,
+      abnormalRate: totalTrials > 0 ? (abnormalCount / totalTrials) * 100 : 0
+    }
+  }
+
+  function getCumulativeWear(schemeId: string) {
+    const scheme = schemes.value.find(s => s.id === schemeId)
+    if (!scheme) return null
+    const approvedTrials = scheme.trials.filter(t => !t.hidden && t.reviewStatus === 'approved')
+    if (approvedTrials.length === 0) return null
+
+    const compCumulative: Record<string, number[]> = {}
+    scheme.components.forEach(c => { compCumulative[c.id] = [] })
+
+    const ropeCumulative: number[] = []
+    const bucketCumulative: number[] = []
+    const labels: string[] = []
+
+    let ropeSum = 0
+    let bucketSum = 0
+    const compSums: Record<string, number> = {}
+    scheme.components.forEach(c => { compSums[c.id] = 0 })
+
+    approvedTrials.forEach(t => {
+      labels.push(`第${t.roundNo}轮`)
+      ropeSum += t.ropeWear
+      bucketSum += t.bucketWear
+      ropeCumulative.push(Number(ropeSum.toFixed(2)))
+      bucketCumulative.push(Number(bucketSum.toFixed(2)))
+      scheme.components.forEach(c => {
+        compSums[c.id] += t.componentWear[c.id] || 0
+        compCumulative[c.id].push(Number(compSums[c.id].toFixed(2)))
+      })
+    })
+
+    return { labels, compCumulative, ropeCumulative, bucketCumulative }
+  }
+
+  function getTemplateComparisonStats(templateIds: string[]) {
+    const result: Array<{
+      templateId: string
+      templateName: string
+      schemeCount: number
+      avgTrials: number
+      avgEfficiency: number
+      avgAbnormalRate: number
+    }> = []
+
+    templateIds.forEach(tid => {
+      const template = templates.value.find(t => t.id === tid)
+      if (!template) return
+
+      const relatedSchemes = schemes.value.filter(s => s.templateId === tid)
+      if (relatedSchemes.length === 0) {
+        result.push({
+          templateId: tid,
+          templateName: template.name,
+          schemeCount: 0,
+          avgTrials: 0,
+          avgEfficiency: 0,
+          avgAbnormalRate: 0
+        })
+        return
+      }
+
+      let totalTrials = 0
+      let totalEfficiency = 0
+      let totalAbnormalRate = 0
+      let validSchemeCount = 0
+
+      relatedSchemes.forEach(s => {
+        totalTrials += s.completedRounds
+        const stats = getSchemeStats(s.id)
+        if (stats) {
+          totalEfficiency += stats.avgEfficiency
+          totalAbnormalRate += stats.abnormalRate
+          validSchemeCount++
+        }
+      })
+
+      result.push({
+        templateId: tid,
+        templateName: template.name,
+        schemeCount: relatedSchemes.length,
+        avgTrials: Number((totalTrials / relatedSchemes.length).toFixed(2)),
+        avgEfficiency: validSchemeCount > 0 ? Number((totalEfficiency / validSchemeCount).toFixed(3)) : 0,
+        avgAbnormalRate: validSchemeCount > 0 ? Number((totalAbnormalRate / validSchemeCount).toFixed(2)) : 0
+      })
+    })
+
+    return result
+  }
+
+  function exportTrialDetails(schemeId: string): string {
+    const scheme = schemes.value.find(s => s.id === schemeId)
+    if (!scheme) return ''
+
+    const rows: string[] = []
+    const headers = [
+      '轮次', '提水耗时(秒)', '漏水率(%)', '有效水量(L)', '效率(L/s)',
+      '井绳编号', '汲桶编号', '井绳磨损', '汲桶磨损', '平均构件磨损',
+      '异常类型', '异常原因', '审查状态', '审查人', '审查意见', '记录时间'
+    ]
+    rows.push(headers.join(','))
+
+    scheme.trials.forEach(t => {
+      const bucket = scheme.buckets[0]
+      const effectiveWater = bucket ? bucket.capacity * (1 - t.leakageRate / 100) : 0
+      const efficiency = t.timeCost > 0 ? effectiveWater / t.timeCost : 0
+      const compVals = Object.values(t.componentWear)
+      const avgCompWear = compVals.length > 0
+        ? compVals.reduce((a, b) => a + b, 0) / compVals.length
+        : 0
+
+      const rope = scheme.ropes.find(r => r.id === t.ropeId)
+      const bkt = scheme.buckets.find(b => b.id === t.bucketId)
+
+      const row = [
+        t.roundNo,
+        t.timeCost,
+        t.leakageRate,
+        effectiveWater.toFixed(2),
+        efficiency.toFixed(3),
+        rope?.ropeNo || '-',
+        bkt?.bucketNo || '-',
+        t.ropeWear,
+        t.bucketWear,
+        avgCompWear.toFixed(2),
+        ABNORMAL_TYPE_LABELS[t.abnormalType],
+        t.abnormalReason || '-',
+        t.reviewStatus === 'pending' ? '待审查' : t.reviewStatus === 'approved' ? '已通过' : '已驳回',
+        t.reviewer || '-',
+        t.reviewComment || '-',
+        new Date(t.createdAt).toLocaleString('zh-CN')
+      ]
+      rows.push(row.map(v => `"${v}"`).join(','))
+    })
+
+    return '\uFEFF' + rows.join('\n')
+  }
+
+  function generateStandardRounds(schemeId: string, roundCount: number, defaultRopeId: string | null, defaultBucketId: string | null): { success: boolean; generated: number; error?: string } {
+    const scheme = schemes.value.find(s => s.id === schemeId)
+    if (!scheme) return { success: false, generated: 0, error: '方案不存在' }
+    if (!scheme.assemblyComplete) return { success: false, generated: 0, error: '构件未完整装配' }
+
+    const remaining = scheme.totalRounds - scheme.completedRounds
+    const toGenerate = Math.min(roundCount, remaining)
+    if (toGenerate <= 0) return { success: false, generated: 0, error: '已达到总试验轮次' }
+
+    const defaultRope = defaultRopeId || scheme.ropes[0]?.id || null
+    const defaultBucket = defaultBucketId || scheme.buckets[0]?.id || null
+
+    for (let i = 0; i < toGenerate; i++) {
+      const roundNo = scheme.trials.length + 1
+      const newTrial: TrialRound = {
+        roundNo,
+        hidden: false,
+        timeCost: 0,
+        leakageRate: 0,
+        componentWear: (() => {
+          const m: Record<string, number> = {}
+          scheme.components.forEach(c => { m[c.id] = 0 })
+          return m
+        })(),
+        ropeWear: 0,
+        bucketWear: 0,
+        notes: '模板自动生成轮次',
+        createdAt: Date.now(),
+        ropeId: defaultRope,
+        bucketId: defaultBucket,
+        abnormalType: 'none',
+        abnormalReason: '',
+        reviewStatus: 'approved'
+      }
+      scheme.trials.push(newTrial)
+    }
+    scheme.completedRounds = scheme.trials.length
+    scheme.updatedAt = Date.now()
+    return { success: true, generated: toGenerate }
+  }
+
+  function filterTemplates(criteria: TemplateFilterCriteria): TrialTemplate[] {
+    return templates.value.filter(t => {
+      if (criteria.wellType && t.wellConfig?.type !== criteria.wellType) return false
+      if (criteria.componentType && !t.components.some(c => c.type === criteria.componentType)) return false
+      if (criteria.ropeMaterial && !t.ropes.some(r => r.material === criteria.ropeMaterial)) return false
+      if (criteria.bucketMaterial && !t.buckets.some(b => b.material === criteria.bucketMaterial)) return false
+      if (criteria.tag && t.tag !== criteria.tag) return false
+      return true
+    })
+  }
+
+  function getTemplateTags(): string[] {
+    const tags = new Set<string>()
+    templates.value.forEach(t => {
+      if (t.tag && t.tag.trim()) tags.add(t.tag.trim())
+    })
+    return Array.from(tags).sort()
+  }
+
+  function getGlobalAbnormalStats() {
+    let totalTrials = 0
+    let abnormalTrials = 0
+    let pendingReviews = 0
+    let approvedReviews = 0
+    let rejectedReviews = 0
+    const abnormalByType: Record<string, number> = { timeout: 0, highLeakage: 0, wearSpike: 0, none: 0 }
+
+    schemes.value.forEach(s => {
+      s.trials.forEach(t => {
+        totalTrials++
+        if (t.abnormalType !== 'none') {
+          abnormalTrials++
+          abnormalByType[t.abnormalType] = (abnormalByType[t.abnormalType] || 0) + 1
+        }
+        abnormalByType.none = totalTrials - abnormalTrials
+        if (t.reviewStatus === 'pending' && t.abnormalType !== 'none') pendingReviews++
+        if (t.reviewStatus === 'approved') approvedReviews++
+        if (t.reviewStatus === 'rejected') rejectedReviews++
+      })
+    })
+
+    return {
+      totalTrials,
+      abnormalTrials,
+      abnormalRate: totalTrials > 0 ? (abnormalTrials / totalTrials) * 100 : 0,
+      pendingReviews,
+      approvedReviews,
+      rejectedReviews,
+      abnormalByType
+    }
+  }
+
+  function getGlobalCumulativeWear() {
+    const allApprovedTrials: Array<{ trial: TrialRound; scheme: RecoveryScheme }> = []
+    schemes.value.forEach(s => {
+      s.trials.filter(t => !t.hidden && t.reviewStatus === 'approved').forEach(t => {
+        allApprovedTrials.push({ trial: t, scheme: s })
+      })
+    })
+    allApprovedTrials.sort((a, b) => a.trial.createdAt - b.trial.createdAt)
+
+    if (allApprovedTrials.length === 0) return null
+
+    const labels: string[] = []
+    const ropeCumulative: number[] = []
+    const bucketCumulative: number[] = []
+    let ropeSum = 0
+    let bucketSum = 0
+
+    allApprovedTrials.forEach(({ trial, scheme }) => {
+      labels.push(`${scheme.name} 第${trial.roundNo}轮`)
+      ropeSum += trial.ropeWear
+      bucketSum += trial.bucketWear
+      ropeCumulative.push(Number(ropeSum.toFixed(2)))
+      bucketCumulative.push(Number(bucketSum.toFixed(2)))
+    })
+
+    return { labels, ropeCumulative, bucketCumulative, total: allApprovedTrials.length }
+  }
+
+  function exportTraceableDetails(schemeIds?: string[]): string {
+    const rows: string[] = []
+    const headers = [
+      '方案名称', '关联模板', '轮次', '提水耗时(秒)', '漏水率(%)', '有效水量(L)', '效率(L/s)',
+      '井绳编号', '汲桶编号', '井绳磨损', '汲桶磨损', '平均构件磨损',
+      '异常类型', '异常原因', '审查状态', '审查人', '审查意见',
+      '记录时间', '审查时间'
+    ]
+    rows.push(headers.join(','))
+
+    const targetSchemes = schemeIds
+      ? schemes.value.filter(s => schemeIds.includes(s.id))
+      : schemes.value
+
+    targetSchemes.forEach(s => {
+      const templateName = s.templateId
+        ? (templates.value.find(t => t.id === s.templateId)?.name || '-')
+        : '-'
+
+      s.trials.forEach(t => {
+        const bucket = s.buckets[0]
+        const effectiveWater = bucket ? bucket.capacity * (1 - t.leakageRate / 100) : 0
+        const efficiency = t.timeCost > 0 ? effectiveWater / t.timeCost : 0
+        const compVals = Object.values(t.componentWear)
+        const avgCompWear = compVals.length > 0
+          ? compVals.reduce((a, b) => a + b, 0) / compVals.length
+          : 0
+
+        const rope = s.ropes.find(r => r.id === t.ropeId)
+        const bkt = s.buckets.find(b => b.id === t.bucketId)
+
+        const row = [
+          s.name,
+          templateName,
+          t.roundNo,
+          t.timeCost,
+          t.leakageRate,
+          effectiveWater.toFixed(2),
+          efficiency.toFixed(3),
+          rope?.ropeNo || '-',
+          bkt?.bucketNo || '-',
+          t.ropeWear,
+          t.bucketWear,
+          avgCompWear.toFixed(2),
+          ABNORMAL_TYPE_LABELS[t.abnormalType],
+          t.abnormalReason || '-',
+          REVIEW_STATUS_LABELS[t.reviewStatus],
+          t.reviewer || '-',
+          t.reviewComment || '-',
+          new Date(t.createdAt).toLocaleString('zh-CN'),
+          t.reviewedAt ? new Date(t.reviewedAt).toLocaleString('zh-CN') : '-'
+        ]
+        rows.push(row.map(v => `"${v}"`).join(','))
+      })
+    })
+
+    return '\uFEFF' + rows.join('\n')
+  }
+
+  function getTemplateComparisonDetail(templateIds: string[]) {
+    return templateIds.map(tid => {
+      const template = templates.value.find(t => t.id === tid)
+      if (!template) return null
+
+      const relatedSchemes = schemes.value.filter(s => s.templateId === tid)
+      let totalTrials = 0
+      let approvedTrials = 0
+      let abnormalTrials = 0
+      let totalTimeCost = 0
+      let totalLeakageRate = 0
+      let totalRopeWear = 0
+      let totalBucketWear = 0
+      let totalEfficiency = 0
+      let validEfficiencyCount = 0
+
+      relatedSchemes.forEach(s => {
+        s.trials.forEach(t => {
+          totalTrials++
+          if (t.reviewStatus === 'approved' && !t.hidden) {
+            approvedTrials++
+            totalTimeCost += t.timeCost
+            totalLeakageRate += t.leakageRate
+            totalRopeWear += t.ropeWear
+            totalBucketWear += t.bucketWear
+            if (t.abnormalType !== 'none') abnormalTrials++
+            const bucket = s.buckets[0]
+            if (bucket && t.timeCost > 0) {
+              totalEfficiency += (bucket.capacity * (1 - t.leakageRate / 100)) / t.timeCost
+              validEfficiencyCount++
+            }
+          }
+        })
+      })
+
+      return {
+        templateId: tid,
+        templateName: template.name,
+        wellType: template.wellConfig?.type || '-',
+        tag: template.tag || '-',
+        schemeCount: relatedSchemes.length,
+        totalTrials,
+        approvedTrials,
+        abnormalTrials,
+        abnormalRate: approvedTrials > 0 ? (abnormalTrials / approvedTrials) * 100 : 0,
+        avgTimeCost: approvedTrials > 0 ? totalTimeCost / approvedTrials : 0,
+        avgLeakageRate: approvedTrials > 0 ? totalLeakageRate / approvedTrials : 0,
+        avgRopeWear: approvedTrials > 0 ? totalRopeWear / approvedTrials : 0,
+        avgBucketWear: approvedTrials > 0 ? totalBucketWear / approvedTrials : 0,
+        avgEfficiency: validEfficiencyCount > 0 ? totalEfficiency / validEfficiencyCount : 0
+      }
+    }).filter(Boolean)
   }
 
   return {
     schemes,
+    templates,
     currentSchemeId,
     currentScheme,
     schemeList,
+    templateList,
     setCurrentScheme,
     createScheme,
     deleteScheme,
@@ -456,9 +1278,45 @@ export const useSchemeStore = defineStore('scheme', () => {
     updateTrial,
     removeTrial,
     getVisibleTrials,
+    getApprovedTrials,
+    getPendingReviewTrials,
+    getAllPendingReviews,
+    reviewTrial,
+    getRopeById,
+    getBucketById,
+    updateAbnormalRules,
     exportSchemes,
     importSchemes,
     validateSchemeData,
-    getSchemeStats
+    createTemplate,
+    saveSchemeAsTemplate,
+    createSchemeFromTemplate,
+    updateTemplateMeta,
+    deleteTemplate,
+    getTemplate,
+    updateTemplateWellConfig,
+    addTemplateComponent,
+    updateTemplateComponent,
+    removeTemplateComponent,
+    addTemplateRope,
+    updateTemplateRope,
+    removeTemplateRope,
+    addTemplateBucket,
+    updateTemplateBucket,
+    removeTemplateBucket,
+    updateTemplateAbnormalRules,
+    exportTemplates,
+    importTemplates,
+    getSchemeStats,
+    getCumulativeWear,
+    getTemplateComparisonStats,
+    exportTrialDetails,
+    generateStandardRounds,
+    filterTemplates,
+    getTemplateTags,
+    getGlobalAbnormalStats,
+    getGlobalCumulativeWear,
+    exportTraceableDetails,
+    getTemplateComparisonDetail
   }
 })

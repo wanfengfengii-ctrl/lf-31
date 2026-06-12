@@ -76,6 +76,35 @@ export interface WellConfig {
   wallMaterial?: string
 }
 
+export type AbnormalType = 'timeout' | 'highLeakage' | 'wearSpike' | 'none'
+
+export const ABNORMAL_TYPE_LABELS: Record<AbnormalType, string> = {
+  timeout: '超时异常',
+  highLeakage: '漏水过高',
+  wearSpike: '磨损突增',
+  none: '正常'
+}
+
+export type ReviewStatus = 'pending' | 'approved' | 'rejected'
+
+export const REVIEW_STATUS_LABELS: Record<ReviewStatus, string> = {
+  pending: '待审查',
+  approved: '已通过',
+  rejected: '已驳回'
+}
+
+export interface AbnormalRuleConfig {
+  timeoutThreshold: number
+  highLeakageThreshold: number
+  wearSpikeThreshold: number
+}
+
+export const DEFAULT_ABNORMAL_RULES: AbnormalRuleConfig = {
+  timeoutThreshold: 120,
+  highLeakageThreshold: 30,
+  wearSpikeThreshold: 3
+}
+
 export interface TrialRound {
   roundNo: number
   hidden: boolean
@@ -86,6 +115,14 @@ export interface TrialRound {
   bucketWear: number
   notes?: string
   createdAt: number
+  ropeId: string | null
+  bucketId: string | null
+  abnormalType: AbnormalType
+  abnormalReason: string
+  reviewStatus: ReviewStatus
+  reviewer?: string
+  reviewComment?: string
+  reviewedAt?: number
 }
 
 export interface RecoveryScheme {
@@ -102,10 +139,71 @@ export interface RecoveryScheme {
   assemblyComplete: boolean
   createdAt: number
   updatedAt: number
+  templateId?: string
+  abnormalRules: AbnormalRuleConfig
 }
 
 export interface SchemeImportResult {
   success: boolean
   schemes: RecoveryScheme[]
   error?: string
+}
+
+export interface TrialTemplate {
+  id: string
+  name: string
+  description?: string
+  wellConfig: WellConfig | null
+  components: Omit<ComponentConfig, 'id'>[]
+  ropes: Omit<RopeConfig, 'id'>[]
+  buckets: Omit<BucketConfig, 'id'>[]
+  totalRounds: number
+  abnormalRules: AbnormalRuleConfig
+  tag?: string
+  createdAt: number
+  updatedAt: number
+  usageCount: number
+}
+
+export interface TemplateFilterCriteria {
+  wellType?: WellType
+  componentType?: ComponentType
+  ropeMaterial?: RopeMaterial
+  bucketMaterial?: BucketMaterial
+  tag?: string
+}
+
+export interface TemplateImportResult {
+  success: boolean
+  templates: TrialTemplate[]
+  error?: string
+}
+
+export interface TraceableTrialDetail {
+  schemeId: string
+  schemeName: string
+  templateId: string | undefined
+  templateName: string | undefined
+  roundNo: number
+  timeCost: number
+  leakageRate: number
+  effectiveWater: number
+  efficiency: number
+  ropeNo: string
+  bucketNo: string
+  ropeWear: number
+  bucketWear: number
+  avgComponentWear: number
+  abnormalType: string
+  abnormalTypeLabel: string
+  abnormalReason: string
+  reviewStatus: string
+  reviewStatusLabel: string
+  reviewer: string
+  reviewComment: string
+  createdAt: string
+  reviewedAt: string
+  ropeId: string | null
+  bucketId: string | null
+  componentWear: Record<string, number>
 }

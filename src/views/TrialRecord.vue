@@ -8,8 +8,14 @@
             <n-tag type="info" style="margin-left: 12px">
               进度：{{ scheme.completedRounds }} / {{ scheme.totalRounds }}
             </n-tag>
+            <n-tag v-if="stats && stats.pendingCount > 0" type="warning" style="margin-left: 8px">
+              待审查：{{ stats.pendingCount }}
+            </n-tag>
           </div>
           <n-space>
+            <n-button type="default" @click="handleExportCsv">
+              📤 导出明细
+            </n-button>
             <n-button type="default" @click="goBackToConfig">返回构件配置</n-button>
             <n-button
               type="primary"
@@ -48,9 +54,16 @@
             value-style="color: #18a058"
           />
           <n-statistic
-            label="参与统计的轮次"
+            label="参与统计轮次"
             :value="stats ? stats.visibleCount : 0"
-            suffix="(已排除隐藏)"
+            suffix="(已排除隐藏/驳回)"
+          />
+          <n-statistic
+            v-if="stats"
+            label="异常占比"
+            :value="Number(stats.abnormalRate.toFixed(1))"
+            suffix="%"
+            value-style="color: #d03050"
           />
         </n-space>
       </n-space>
@@ -60,7 +73,11 @@
       <template #header>
         <div style="display: flex; justify-content: space-between; align-items: center">
           <span>试验轮次明细</span>
-          <n-tag>🔒 隐藏轮次不会计入数据分析与图表</n-tag>
+          <n-space>
+            <n-tag>🔒 隐藏轮次不计入统计</n-tag>
+            <n-tag type="warning">⏳ 待审查轮次暂不计入统计</n-tag>
+            <n-tag type="error">❌ 已驳回轮次不计入统计</n-tag>
+          </n-space>
         </div>
       </template>
 
@@ -94,6 +111,24 @@
         <n-form-item label="轮次编号">
           <n-input :value="`第 ${nextRoundNo} 轮`" disabled />
         </n-form-item>
+        <n-grid :cols="2" :x-gap="12">
+          <n-form-item label="使用井绳" path="ropeId" :show-label="true">
+            <n-select
+              v-model:value="addForm.ropeId"
+              :options="ropeOptions"
+              placeholder="请选择实际使用的井绳"
+              clearable
+            />
+          </n-form-item>
+          <n-form-item label="使用汲桶" path="bucketId" :show-label="true">
+            <n-select
+              v-model:value="addForm.bucketId"
+              :options="bucketOptions"
+              placeholder="请选择实际使用的汲桶"
+              clearable
+            />
+          </n-form-item>
+        </n-grid>
         <n-form-item label="提水耗时 (秒)" path="timeCost">
           <n-input-number v-model:value="addForm.timeCost" :min="0" :max="3600" :step="0.1" style="width: 100%" />
           <span style="color: #999; font-size: 12px">从井底到地面的完整提水时间，不能小于 0</span>
@@ -165,6 +200,24 @@
         <n-form-item label="轮次编号">
           <n-input :value="`第 ${editingRoundNo} 轮`" disabled />
         </n-form-item>
+        <n-grid :cols="2" :x-gap="12">
+          <n-form-item label="使用井绳" :show-label="true">
+            <n-select
+              v-model:value="editForm.ropeId"
+              :options="ropeOptions"
+              placeholder="请选择实际使用的井绳"
+              clearable
+            />
+          </n-form-item>
+          <n-form-item label="使用汲桶" :show-label="true">
+            <n-select
+              v-model:value="editForm.bucketId"
+              :options="bucketOptions"
+              placeholder="请选择实际使用的汲桶"
+              clearable
+            />
+          </n-form-item>
+        </n-grid>
         <n-form-item label="提水耗时 (秒)" path="timeCost">
           <n-input-number v-model:value="editForm.timeCost" :min="0" :max="3600" :step="0.1" style="width: 100%" />
         </n-form-item>
@@ -217,9 +270,9 @@
 <script setup lang="ts">
 import { ref, computed, h, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useMessage, useDialog, type DataTableColumns } from 'naive-ui'
+import { useMessage, useDialog, type DataTableColumns, type SelectOption } from 'naive-ui'
 import { useSchemeStore } from '@/stores/scheme'
-import { COMPONENT_TYPE_OPTIONS, type TrialRound } from '@/types'
+import { COMPONENT_TYPE_OPTIONS, ABNORMAL_TYPE_LABELS, REVIEW_STATUS_LABELS, type TrialRound, type ReviewStatus } from '@/types'
 
 const schemeStore = useSchemeStore()
 const message = useMessage()
@@ -242,6 +295,20 @@ COMPONENT_TYPE_OPTIONS.forEach(o => { typeLabelMap[o.value] = o.label })
 
 const nextRoundNo = computed(() => (scheme.value?.completedRounds || 0) + 1)
 
+const ropeOptions = computed<SelectOption[]>(() => {
+  return scheme.value?.ropes.map(r => ({
+    label: `${r.ropeNo} - ${r.material} (${r.diameter}mm)`,
+    value: r.id
+  })) || []
+})
+
+const bucketOptions = computed<SelectOption[]>(() => {
+  return scheme.value?.buckets.map(b => ({
+    label: `${b.bucketNo} - ${b.material} (${b.capacity}L)`,
+    value: b.id
+  })) || []
+})
+
 const initWearMap = () => {
   const m: Record<string, number> = {}
   scheme.value?.components.forEach(c => { m[c.id] = 0 })
@@ -255,7 +322,9 @@ const emptyAddForm = () => ({
   componentWear: initWearMap(),
   ropeWear: 0,
   bucketWear: 0,
-  notes: ''
+  notes: '',
+  ropeId: null as string | null,
+  bucketId: null as string | null
 })
 
 const addForm = ref(emptyAddForm())
@@ -290,7 +359,12 @@ const emptyEditForm = (): TrialRound => ({
   ropeWear: 0,
   bucketWear: 0,
   notes: '',
-  createdAt: 0
+  createdAt: 0,
+  ropeId: null,
+  bucketId: null,
+  abnormalType: 'none',
+  abnormalReason: '',
+  reviewStatus: 'approved'
 })
 
 const editForm = ref<TrialRound>(emptyEditForm())
@@ -323,7 +397,12 @@ function handleAddTrial() {
         componentWear: { ...addForm.value.componentWear },
         ropeWear: addForm.value.ropeWear,
         bucketWear: addForm.value.bucketWear,
-        notes: addForm.value.notes
+        notes: addForm.value.notes,
+        ropeId: addForm.value.ropeId,
+        bucketId: addForm.value.bucketId,
+        abnormalType: 'none',
+        abnormalReason: '',
+        reviewStatus: 'approved'
       })
       if (res.success) {
         message.success('试验记录已保存')
@@ -346,7 +425,12 @@ function handleEdit(row: TrialRound) {
     ropeWear: row.ropeWear,
     bucketWear: row.bucketWear,
     notes: row.notes,
-    createdAt: row.createdAt
+    createdAt: row.createdAt,
+    ropeId: row.ropeId,
+    bucketId: row.bucketId,
+    abnormalType: row.abnormalType,
+    abnormalReason: row.abnormalReason,
+    reviewStatus: row.reviewStatus
   }
   showEditModal.value = true
 }
@@ -361,7 +445,9 @@ function handleEditTrial() {
         componentWear: editForm.value.componentWear,
         ropeWear: editForm.value.ropeWear,
         bucketWear: editForm.value.bucketWear,
-        notes: editForm.value.notes
+        notes: editForm.value.notes,
+        ropeId: editForm.value.ropeId,
+        bucketId: editForm.value.bucketId
       })
       if (res.success) {
         message.success('修改已保存')
@@ -393,6 +479,53 @@ function toggleHidden(row: TrialRound) {
   message.info(row.hidden ? '已取消隐藏，将计入统计' : '已隐藏，不计入统计')
 }
 
+function handleExportCsv() {
+  if (!scheme.value) return
+  const csv = schemeStore.exportTrialDetails(scheme.value.id)
+  if (!csv) {
+    message.warning('暂无数据可导出')
+    return
+  }
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${scheme.value.name}_试验明细_${Date.now()}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+  message.success('导出成功')
+}
+
+function getAbnormalTagType(type: string): 'default' | 'info' | 'success' | 'warning' | 'error' {
+  switch (type) {
+    case 'timeout': return 'warning'
+    case 'highLeakage': return 'error'
+    case 'wearSpike': return 'info'
+    default: return 'success'
+  }
+}
+
+function getReviewTagType(status: ReviewStatus): 'default' | 'info' | 'success' | 'warning' | 'error' {
+  switch (status) {
+    case 'pending': return 'warning'
+    case 'approved': return 'success'
+    case 'rejected': return 'error'
+    default: return 'default'
+  }
+}
+
+function getRopeNo(ropeId: string | null): string {
+  if (!ropeId || !scheme.value) return '-'
+  const rope = scheme.value.ropes.find(r => r.id === ropeId)
+  return rope?.ropeNo || '-'
+}
+
+function getBucketNo(bucketId: string | null): string {
+  if (!bucketId || !scheme.value) return '-'
+  const bucket = scheme.value.buckets.find(b => b.id === bucketId)
+  return bucket?.bucketNo || '-'
+}
+
 const columns: DataTableColumns<TrialRound> = [
   {
     title: '轮次',
@@ -403,15 +536,27 @@ const columns: DataTableColumns<TrialRound> = [
       { style: { fontWeight: 600 } },
       [
         `第 ${row.roundNo} 轮`,
-        row.hidden ? h('span', { style: { marginLeft: '6px', color: '#d03050', fontSize: '12px' } }, '🔒已隐藏') : null
+        row.hidden ? h('span', { style: { marginLeft: '6px', color: '#d03050', fontSize: '12px' } }, '🔒') : null
       ]
     )
+  },
+  {
+    title: '井绳编号',
+    key: 'ropeNo',
+    width: 110,
+    render: (row) => getRopeNo(row.ropeId)
+  },
+  {
+    title: '汲桶编号',
+    key: 'bucketNo',
+    width: 110,
+    render: (row) => getBucketNo(row.bucketId)
   },
   { title: '耗时 (秒)', key: 'timeCost', width: 100 },
   {
     title: '漏水率',
     key: 'leakageRate',
-    width: 110,
+    width: 100,
     render: (row) => h(
       'span',
       { style: { color: row.leakageRate > 20 ? '#d03050' : '#18a058', fontWeight: 500 } },
@@ -421,7 +566,7 @@ const columns: DataTableColumns<TrialRound> = [
   {
     title: '有效水量',
     key: 'effectiveWater',
-    width: 110,
+    width: 100,
     render: (row) => {
       const bucket = scheme.value?.buckets[0]
       if (!bucket) return '-'
@@ -432,7 +577,7 @@ const columns: DataTableColumns<TrialRound> = [
   {
     title: '效率 (L/s)',
     key: 'efficiency',
-    width: 110,
+    width: 100,
     render: (row) => {
       if (row.timeCost <= 0) return '-'
       const bucket = scheme.value?.buckets[0]
@@ -441,29 +586,36 @@ const columns: DataTableColumns<TrialRound> = [
       return eff.toFixed(3)
     }
   },
-  { title: '井绳磨损', key: 'ropeWear', width: 100 },
-  { title: '汲桶磨损', key: 'bucketWear', width: 100 },
+  { title: '井绳磨损', key: 'ropeWear', width: 90 },
+  { title: '汲桶磨损', key: 'bucketWear', width: 90 },
   {
-    title: '平均构件磨损',
-    key: 'avgCompWear',
-    width: 130,
-    render: (row) => {
-      const vals = Object.values(row.componentWear)
-      if (vals.length === 0) return '-'
-      const avg = vals.reduce((a, b) => a + b, 0) / vals.length
-      return avg.toFixed(2)
-    }
+    title: '异常类型',
+    key: 'abnormalType',
+    width: 110,
+    render: (row) => row.abnormalType === 'none'
+      ? h('n-tag', { type: 'success', size: 'small' }, () => '正常')
+      : h('n-tag', { type: getAbnormalTagType(row.abnormalType), size: 'small' }, () => ABNORMAL_TYPE_LABELS[row.abnormalType])
+  },
+  {
+    title: '审查状态',
+    key: 'reviewStatus',
+    width: 100,
+    render: (row) => h(
+      'n-tag',
+      { type: getReviewTagType(row.reviewStatus), size: 'small' },
+      () => REVIEW_STATUS_LABELS[row.reviewStatus]
+    )
   },
   {
     title: '记录时间',
     key: 'createdAt',
-    width: 160,
+    width: 150,
     render: (row) => new Date(row.createdAt).toLocaleString('zh-CN')
   },
   {
     title: '操作',
     key: 'actions',
-    width: 220,
+    width: 200,
     render: (row) => h(
       'div',
       { style: { display: 'flex', gap: '8px' } },
