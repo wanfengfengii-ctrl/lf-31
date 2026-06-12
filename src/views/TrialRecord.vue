@@ -8,14 +8,8 @@
             <n-tag type="info" style="margin-left: 12px">
               进度：{{ scheme.completedRounds }} / {{ scheme.totalRounds }}
             </n-tag>
-            <n-tag v-if="stats && stats.pendingCount > 0" type="warning" style="margin-left: 8px">
-              待审查：{{ stats.pendingCount }}
-            </n-tag>
           </div>
           <n-space>
-            <n-button type="default" @click="handleExportCsv">
-              📤 导出明细
-            </n-button>
             <n-button type="default" @click="goBackToConfig">返回构件配置</n-button>
             <n-button
               type="primary"
@@ -54,16 +48,9 @@
             value-style="color: #18a058"
           />
           <n-statistic
-            label="参与统计轮次"
+            label="参与统计的轮次"
             :value="stats ? stats.visibleCount : 0"
-            suffix="(已排除隐藏/驳回)"
-          />
-          <n-statistic
-            v-if="stats"
-            label="异常占比"
-            :value="Number(stats.abnormalRate.toFixed(1))"
-            suffix="%"
-            value-style="color: #d03050"
+            suffix="(已排除隐藏)"
           />
         </n-space>
       </n-space>
@@ -73,11 +60,7 @@
       <template #header>
         <div style="display: flex; justify-content: space-between; align-items: center">
           <span>试验轮次明细</span>
-          <n-space>
-            <n-tag>🔒 隐藏轮次不计入统计</n-tag>
-            <n-tag type="warning">⏳ 待审查轮次暂不计入统计</n-tag>
-            <n-tag type="error">❌ 已驳回轮次不计入统计</n-tag>
-          </n-space>
+          <n-tag>🔒 隐藏轮次不会计入数据分析与图表</n-tag>
         </div>
       </template>
 
@@ -111,24 +94,6 @@
         <n-form-item label="轮次编号">
           <n-input :value="`第 ${nextRoundNo} 轮`" disabled />
         </n-form-item>
-        <n-grid :cols="2" :x-gap="12">
-          <n-form-item label="使用井绳" path="ropeId" :show-label="true">
-            <n-select
-              v-model:value="addForm.ropeId"
-              :options="ropeOptions"
-              placeholder="请选择实际使用的井绳"
-              clearable
-            />
-          </n-form-item>
-          <n-form-item label="使用汲桶" path="bucketId" :show-label="true">
-            <n-select
-              v-model:value="addForm.bucketId"
-              :options="bucketOptions"
-              placeholder="请选择实际使用的汲桶"
-              clearable
-            />
-          </n-form-item>
-        </n-grid>
         <n-form-item label="提水耗时 (秒)" path="timeCost">
           <n-input-number v-model:value="addForm.timeCost" :min="0" :max="3600" :step="0.1" style="width: 100%" />
           <span style="color: #999; font-size: 12px">从井底到地面的完整提水时间，不能小于 0</span>
@@ -175,175 +140,6 @@
         <n-form-item label="备注" path="notes">
           <n-input v-model:value="addForm.notes" type="textarea" placeholder="可选：异常情况或备注说明" :rows="2" />
         </n-form-item>
-
-        <n-divider style="margin: 8px 0" />
-        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px">
-          <span style="font-size: 15px; font-weight: 600; color: #18a058">🌤️ 环境条件记录</span>
-          <n-switch v-model:value="addForm.recordEnvironment" round />
-          <span style="color: #999; font-size: 12px">{{ addForm.recordEnvironment ? '已启用' : '点击启用后填写' }}</span>
-        </div>
-        <div v-if="addForm.recordEnvironment" style="padding-left: 8px">
-          <n-form-item label="天气">
-            <n-select
-              v-model:value="addForm.environmentConditions.weather"
-              :options="WEATHER_OPTIONS"
-              placeholder="请选择天气"
-            />
-          </n-form-item>
-          <n-grid :cols="2" :x-gap="12">
-            <n-form-item label="气温 (℃)">
-              <n-input-number
-                v-model:value="addForm.environmentConditions.temperature"
-                :min="-20" :max="50" :step="0.1"
-                style="width: 100%"
-              />
-            </n-form-item>
-            <n-form-item label="湿度 (%)">
-              <n-input-number
-                v-model:value="addForm.environmentConditions.humidity"
-                :min="0" :max="100" :step="0.1"
-                style="width: 100%"
-              />
-            </n-form-item>
-          </n-grid>
-          <n-form-item label="风力">
-            <n-select
-              v-model:value="addForm.environmentConditions.windLevel"
-              :options="WIND_LEVEL_OPTIONS"
-              placeholder="请选择风力等级"
-            />
-          </n-form-item>
-          <n-form-item label="井水位波动 (cm)">
-            <n-input-number
-              v-model:value="addForm.environmentConditions.waterLevelFluctuation"
-              :min="-100" :max="100" :step="0.1"
-              style="width: 100%"
-            />
-          </n-form-item>
-        </div>
-
-        <n-divider style="margin: 16px 0" />
-        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px">
-          <span style="font-size: 15px; font-weight: 600; color: #2080f0">👥 人力操作记录</span>
-          <n-switch v-model:value="addForm.recordHuman" round />
-          <span style="color: #999; font-size: 12px">{{ addForm.recordHuman ? '已启用' : '点击启用后填写' }}</span>
-        </div>
-        <div v-if="addForm.recordHuman" style="padding-left: 8px">
-          <n-form-item label="提水姿态">
-            <n-select
-              v-model:value="addForm.humanOperation.liftingPosture"
-              :options="LIFTING_POSTURE_OPTIONS"
-              placeholder="请选择提水姿态"
-            />
-          </n-form-item>
-          <n-grid :cols="2" :x-gap="12">
-            <n-form-item label="操作人数">
-              <n-input-number
-                v-model:value="addForm.humanOperation.operatorCount"
-                :min="1" :max="10" :step="1"
-                style="width: 100%"
-              />
-            </n-form-item>
-            <n-form-item label="中途停顿次数">
-              <n-input-number
-                v-model:value="addForm.humanOperation.midPauseCount"
-                :min="0" :max="20" :step="1"
-                style="width: 100%"
-              />
-            </n-form-item>
-          </n-grid>
-          <n-form-item label="总停顿时长 (秒)">
-            <n-input-number
-              v-model:value="addForm.humanOperation.totalPauseDuration"
-              :min="0" :max="600" :step="1"
-              style="width: 100%"
-            />
-          </n-form-item>
-
-          <n-divider style="margin: 8px 0" />
-          <div style="font-weight: 600; margin-bottom: 8px">操作者信息</div>
-          <n-space vertical :size="8" style="width: 100%">
-            <div
-              v-for="(op, idx) in addForm.humanOperation.operators"
-              :key="op.id"
-              style="display: flex; gap: 8px; align-items: flex-start"
-            >
-              <div style="flex: 1; display: flex; gap: 8px; flex-wrap: wrap">
-                <n-input
-                  v-model:value="op.name"
-                  placeholder="姓名"
-                  style="flex: 1; min-width: 100px"
-                />
-                <n-select
-                  v-model:value="op.role"
-                  :options="OPERATOR_ROLE_OPTIONS"
-                  placeholder="身份"
-                  style="flex: 1; min-width: 120px"
-                />
-                <n-input-number
-                  v-model:value="op.yearsOfExperience"
-                  :min="0" :max="60" :step="1"
-                  placeholder="经验年限"
-                  style="width: 110px"
-                />
-              </div>
-              <n-button size="small" type="default" @click="removeAddOperator(idx)">删除</n-button>
-            </div>
-            <n-button size="small" type="default" @click="addAddOperator">+ 添加操作者</n-button>
-          </n-space>
-
-          <n-divider style="margin: 8px 0" />
-          <div style="font-weight: 600; margin-bottom: 8px">维护干预记录</div>
-          <n-space vertical :size="8" style="width: 100%">
-            <div
-              v-for="(mt, idx) in addForm.humanOperation.maintenanceInterventions"
-              :key="idx"
-              style="display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap"
-            >
-              <n-select
-                v-model:value="mt.type"
-                :options="[
-                  { label: '润滑', value: 'lubrication' },
-                  { label: '调整', value: 'adjustment' },
-                  { label: '修理', value: 'repair' },
-                  { label: '更换', value: 'replacement' },
-                  { label: '清洁', value: 'cleaning' }
-                ]"
-                placeholder="类型"
-                style="width: 100px"
-              />
-              <n-input
-                v-model:value="mt.targetComponent"
-                placeholder="目标构件"
-                style="flex: 1; min-width: 100px"
-              />
-              <n-input-number
-                v-model:value="mt.duration"
-                :min="0" :max="3600" :step="1"
-                placeholder="耗时(秒)"
-                style="width: 100px"
-              />
-              <div style="flex: 2; min-width: 200px; display: flex; gap: 8px">
-                <n-input
-                  v-model:value="mt.description"
-                  placeholder="说明"
-                  style="flex: 1"
-                />
-                <n-button size="small" type="default" @click="removeAddMaintenance(idx)">删除</n-button>
-              </div>
-            </div>
-            <n-button size="small" type="default" @click="addAddMaintenance">+ 添加维护干预</n-button>
-          </n-space>
-
-          <n-form-item label="操作备注" style="margin-top: 12px">
-            <n-input
-              v-model:value="addForm.humanOperation.operationNotes"
-              type="textarea"
-              placeholder="操作过程中的注意事项或特殊情况"
-              :rows="2"
-            />
-          </n-form-item>
-        </div>
       </n-form>
       <template #footer>
         <n-space justify="end">
@@ -369,24 +165,6 @@
         <n-form-item label="轮次编号">
           <n-input :value="`第 ${editingRoundNo} 轮`" disabled />
         </n-form-item>
-        <n-grid :cols="2" :x-gap="12">
-          <n-form-item label="使用井绳" :show-label="true">
-            <n-select
-              v-model:value="editForm.ropeId"
-              :options="ropeOptions"
-              placeholder="请选择实际使用的井绳"
-              clearable
-            />
-          </n-form-item>
-          <n-form-item label="使用汲桶" :show-label="true">
-            <n-select
-              v-model:value="editForm.bucketId"
-              :options="bucketOptions"
-              placeholder="请选择实际使用的汲桶"
-              clearable
-            />
-          </n-form-item>
-        </n-grid>
         <n-form-item label="提水耗时 (秒)" path="timeCost">
           <n-input-number v-model:value="editForm.timeCost" :min="0" :max="3600" :step="0.1" style="width: 100%" />
         </n-form-item>
@@ -425,175 +203,6 @@
         <n-form-item label="备注">
           <n-input v-model:value="editForm.notes" type="textarea" :rows="2" />
         </n-form-item>
-
-        <n-divider style="margin: 8px 0" />
-        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px">
-          <span style="font-size: 15px; font-weight: 600; color: #18a058">🌤️ 环境条件记录</span>
-          <n-switch v-model:value="editForm.recordEnvironment" round />
-          <span style="color: #999; font-size: 12px">{{ editForm.recordEnvironment ? '已启用' : '点击启用后填写' }}</span>
-        </div>
-        <div v-if="editForm.recordEnvironment" style="padding-left: 8px">
-          <n-form-item label="天气">
-            <n-select
-              v-model:value="editForm.environmentConditions.weather"
-              :options="WEATHER_OPTIONS"
-              placeholder="请选择天气"
-            />
-          </n-form-item>
-          <n-grid :cols="2" :x-gap="12">
-            <n-form-item label="气温 (℃)">
-              <n-input-number
-                v-model:value="editForm.environmentConditions.temperature"
-                :min="-20" :max="50" :step="0.1"
-                style="width: 100%"
-              />
-            </n-form-item>
-            <n-form-item label="湿度 (%)">
-              <n-input-number
-                v-model:value="editForm.environmentConditions.humidity"
-                :min="0" :max="100" :step="0.1"
-                style="width: 100%"
-              />
-            </n-form-item>
-          </n-grid>
-          <n-form-item label="风力">
-            <n-select
-              v-model:value="editForm.environmentConditions.windLevel"
-              :options="WIND_LEVEL_OPTIONS"
-              placeholder="请选择风力等级"
-            />
-          </n-form-item>
-          <n-form-item label="井水位波动 (cm)">
-            <n-input-number
-              v-model:value="editForm.environmentConditions.waterLevelFluctuation"
-              :min="-100" :max="100" :step="0.1"
-              style="width: 100%"
-            />
-          </n-form-item>
-        </div>
-
-        <n-divider style="margin: 16px 0" />
-        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px">
-          <span style="font-size: 15px; font-weight: 600; color: #2080f0">👥 人力操作记录</span>
-          <n-switch v-model:value="editForm.recordHuman" round />
-          <span style="color: #999; font-size: 12px">{{ editForm.recordHuman ? '已启用' : '点击启用后填写' }}</span>
-        </div>
-        <div v-if="editForm.recordHuman" style="padding-left: 8px">
-          <n-form-item label="提水姿态">
-            <n-select
-              v-model:value="editForm.humanOperation.liftingPosture"
-              :options="LIFTING_POSTURE_OPTIONS"
-              placeholder="请选择提水姿态"
-            />
-          </n-form-item>
-          <n-grid :cols="2" :x-gap="12">
-            <n-form-item label="操作人数">
-              <n-input-number
-                v-model:value="editForm.humanOperation.operatorCount"
-                :min="1" :max="10" :step="1"
-                style="width: 100%"
-              />
-            </n-form-item>
-            <n-form-item label="中途停顿次数">
-              <n-input-number
-                v-model:value="editForm.humanOperation.midPauseCount"
-                :min="0" :max="20" :step="1"
-                style="width: 100%"
-              />
-            </n-form-item>
-          </n-grid>
-          <n-form-item label="总停顿时长 (秒)">
-            <n-input-number
-              v-model:value="editForm.humanOperation.totalPauseDuration"
-              :min="0" :max="600" :step="1"
-              style="width: 100%"
-            />
-          </n-form-item>
-
-          <n-divider style="margin: 8px 0" />
-          <div style="font-weight: 600; margin-bottom: 8px">操作者信息</div>
-          <n-space vertical :size="8" style="width: 100%">
-            <div
-              v-for="(op, idx) in editForm.humanOperation.operators"
-              :key="op.id"
-              style="display: flex; gap: 8px; align-items: flex-start"
-            >
-              <div style="flex: 1; display: flex; gap: 8px; flex-wrap: wrap">
-                <n-input
-                  v-model:value="op.name"
-                  placeholder="姓名"
-                  style="flex: 1; min-width: 100px"
-                />
-                <n-select
-                  v-model:value="op.role"
-                  :options="OPERATOR_ROLE_OPTIONS"
-                  placeholder="身份"
-                  style="flex: 1; min-width: 120px"
-                />
-                <n-input-number
-                  v-model:value="op.yearsOfExperience"
-                  :min="0" :max="60" :step="1"
-                  placeholder="经验年限"
-                  style="width: 110px"
-                />
-              </div>
-              <n-button size="small" type="default" @click="removeEditOperator(idx)">删除</n-button>
-            </div>
-            <n-button size="small" type="default" @click="addEditOperator">+ 添加操作者</n-button>
-          </n-space>
-
-          <n-divider style="margin: 8px 0" />
-          <div style="font-weight: 600; margin-bottom: 8px">维护干预记录</div>
-          <n-space vertical :size="8" style="width: 100%">
-            <div
-              v-for="(mt, idx) in editForm.humanOperation.maintenanceInterventions"
-              :key="idx"
-              style="display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap"
-            >
-              <n-select
-                v-model:value="mt.type"
-                :options="[
-                  { label: '润滑', value: 'lubrication' },
-                  { label: '调整', value: 'adjustment' },
-                  { label: '修理', value: 'repair' },
-                  { label: '更换', value: 'replacement' },
-                  { label: '清洁', value: 'cleaning' }
-                ]"
-                placeholder="类型"
-                style="width: 100px"
-              />
-              <n-input
-                v-model:value="mt.targetComponent"
-                placeholder="目标构件"
-                style="flex: 1; min-width: 100px"
-              />
-              <n-input-number
-                v-model:value="mt.duration"
-                :min="0" :max="3600" :step="1"
-                placeholder="耗时(秒)"
-                style="width: 100px"
-              />
-              <div style="flex: 2; min-width: 200px; display: flex; gap: 8px">
-                <n-input
-                  v-model:value="mt.description"
-                  placeholder="说明"
-                  style="flex: 1"
-                />
-                <n-button size="small" type="default" @click="removeEditMaintenance(idx)">删除</n-button>
-              </div>
-            </div>
-            <n-button size="small" type="default" @click="addEditMaintenance">+ 添加维护干预</n-button>
-          </n-space>
-
-          <n-form-item label="操作备注" style="margin-top: 12px">
-            <n-input
-              v-model:value="editForm.humanOperation.operationNotes"
-              type="textarea"
-              placeholder="操作过程中的注意事项或特殊情况"
-              :rows="2"
-            />
-          </n-form-item>
-        </div>
       </n-form>
       <template #footer>
         <n-space justify="end">
@@ -608,27 +217,9 @@
 <script setup lang="ts">
 import { ref, computed, h, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useMessage, useDialog, type DataTableColumns, type SelectOption } from 'naive-ui'
+import { useMessage, useDialog, type DataTableColumns } from 'naive-ui'
 import { useSchemeStore } from '@/stores/scheme'
-import {
-  COMPONENT_TYPE_OPTIONS,
-  ABNORMAL_TYPE_LABELS,
-  REVIEW_STATUS_LABELS,
-  WEATHER_OPTIONS,
-  WIND_LEVEL_OPTIONS,
-  OPERATOR_ROLE_OPTIONS,
-  LIFTING_POSTURE_OPTIONS,
-  type TrialRound,
-  type ReviewStatus,
-  type WeatherType,
-  type WindLevel,
-  type OperatorRole,
-  type LiftingPosture,
-  type EnvironmentConditions,
-  type HumanOperationRecord,
-  type OperatorInfo,
-  type MaintenanceIntervention
-} from '@/types'
+import { COMPONENT_TYPE_OPTIONS, type TrialRound } from '@/types'
 
 const schemeStore = useSchemeStore()
 const message = useMessage()
@@ -651,43 +242,11 @@ COMPONENT_TYPE_OPTIONS.forEach(o => { typeLabelMap[o.value] = o.label })
 
 const nextRoundNo = computed(() => (scheme.value?.completedRounds || 0) + 1)
 
-const ropeOptions = computed<SelectOption[]>(() => {
-  return scheme.value?.ropes.map(r => ({
-    label: `${r.ropeNo} - ${r.material} (${r.diameter}mm)`,
-    value: r.id
-  })) || []
-})
-
-const bucketOptions = computed<SelectOption[]>(() => {
-  return scheme.value?.buckets.map(b => ({
-    label: `${b.bucketNo} - ${b.material} (${b.capacity}L)`,
-    value: b.id
-  })) || []
-})
-
 const initWearMap = () => {
   const m: Record<string, number> = {}
   scheme.value?.components.forEach(c => { m[c.id] = 0 })
   return m
 }
-
-const emptyEnv = (): EnvironmentConditions => ({
-  weather: 'sunny' as WeatherType,
-  temperature: 25,
-  humidity: 60,
-  windLevel: 'calm' as WindLevel,
-  waterLevelFluctuation: 0
-})
-
-const emptyHuman = (): HumanOperationRecord => ({
-  operatorCount: 1,
-  operators: [] as OperatorInfo[],
-  liftingPosture: 'standing_two_hand' as LiftingPosture,
-  midPauseCount: 0,
-  totalPauseDuration: 0,
-  maintenanceInterventions: [] as MaintenanceIntervention[],
-  operationNotes: ''
-})
 
 const emptyAddForm = () => ({
   hidden: false,
@@ -696,42 +255,10 @@ const emptyAddForm = () => ({
   componentWear: initWearMap(),
   ropeWear: 0,
   bucketWear: 0,
-  notes: '',
-  ropeId: null as string | null,
-  bucketId: null as string | null,
-  environmentConditions: emptyEnv(),
-  humanOperation: emptyHuman(),
-  recordEnvironment: false,
-  recordHuman: false
+  notes: ''
 })
 
 const addForm = ref(emptyAddForm())
-
-function addAddOperator() {
-  addForm.value.humanOperation.operators.push({
-    id: `op_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-    name: '',
-    role: 'volunteer' as any,
-    yearsOfExperience: 0
-  })
-}
-
-function removeAddOperator(idx: number) {
-  addForm.value.humanOperation.operators.splice(idx, 1)
-}
-
-function addAddMaintenance() {
-  addForm.value.humanOperation.maintenanceInterventions.push({
-    type: 'lubrication',
-    targetComponent: '',
-    description: '',
-    duration: 0
-  })
-}
-
-function removeAddMaintenance(idx: number) {
-  addForm.value.humanOperation.maintenanceInterventions.splice(idx, 1)
-}
 
 const addRules = {
   timeCost: [
@@ -754,7 +281,7 @@ const addRules = {
 
 const editRules = { ...addRules }
 
-const emptyEditForm = (): TrialRound & { recordEnvironment: boolean; recordHuman: boolean } => ({
+const emptyEditForm = (): TrialRound => ({
   roundNo: 0,
   hidden: false,
   timeCost: 0,
@@ -763,45 +290,10 @@ const emptyEditForm = (): TrialRound & { recordEnvironment: boolean; recordHuman
   ropeWear: 0,
   bucketWear: 0,
   notes: '',
-  createdAt: 0,
-  ropeId: null,
-  bucketId: null,
-  abnormalType: 'none',
-  abnormalReason: '',
-  reviewStatus: 'approved',
-  environmentConditions: emptyEnv(),
-  humanOperation: emptyHuman(),
-  recordEnvironment: false,
-  recordHuman: false
+  createdAt: 0
 })
 
-const editForm = ref<TrialRound & { recordEnvironment: boolean; recordHuman: boolean }>(emptyEditForm())
-
-function addEditOperator() {
-  editForm.value.humanOperation.operators.push({
-    id: `op_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-    name: '',
-    role: 'volunteer' as any,
-    yearsOfExperience: 0
-  })
-}
-
-function removeEditOperator(idx: number) {
-  editForm.value.humanOperation.operators.splice(idx, 1)
-}
-
-function addEditMaintenance() {
-  editForm.value.humanOperation.maintenanceInterventions.push({
-    type: 'lubrication',
-    targetComponent: '',
-    description: '',
-    duration: 0
-  })
-}
-
-function removeEditMaintenance(idx: number) {
-  editForm.value.humanOperation.maintenanceInterventions.splice(idx, 1)
-}
+const editForm = ref<TrialRound>(emptyEditForm())
 
 onMounted(() => {
   schemeStore.setCurrentScheme(schemeId.value)
@@ -823,7 +315,7 @@ function openAddModal() {
 function handleAddTrial() {
   addFormRef.value?.validate((errors: any) => {
     if (!errors && scheme.value) {
-      const trialData: any = {
+      const res = schemeStore.addTrial(scheme.value.id, {
         roundNo: 0,
         hidden: addForm.value.hidden,
         timeCost: addForm.value.timeCost,
@@ -831,24 +323,8 @@ function handleAddTrial() {
         componentWear: { ...addForm.value.componentWear },
         ropeWear: addForm.value.ropeWear,
         bucketWear: addForm.value.bucketWear,
-        notes: addForm.value.notes,
-        ropeId: addForm.value.ropeId,
-        bucketId: addForm.value.bucketId,
-        abnormalType: 'none',
-        abnormalReason: '',
-        reviewStatus: 'approved'
-      }
-      if (addForm.value.recordEnvironment) {
-        trialData.environmentConditions = { ...addForm.value.environmentConditions }
-      }
-      if (addForm.value.recordHuman) {
-        trialData.humanOperation = {
-          ...addForm.value.humanOperation,
-          operators: [...addForm.value.humanOperation.operators],
-          maintenanceInterventions: [...addForm.value.humanOperation.maintenanceInterventions]
-        }
-      }
-      const res = schemeStore.addTrial(scheme.value.id, trialData)
+        notes: addForm.value.notes
+      })
       if (res.success) {
         message.success('试验记录已保存')
         showAddModal.value = false
@@ -870,20 +346,7 @@ function handleEdit(row: TrialRound) {
     ropeWear: row.ropeWear,
     bucketWear: row.bucketWear,
     notes: row.notes,
-    createdAt: row.createdAt,
-    ropeId: row.ropeId,
-    bucketId: row.bucketId,
-    abnormalType: row.abnormalType,
-    abnormalReason: row.abnormalReason,
-    reviewStatus: row.reviewStatus,
-    environmentConditions: row.environmentConditions ? { ...row.environmentConditions } : emptyEnv(),
-    humanOperation: row.humanOperation ? {
-      ...row.humanOperation,
-      operators: row.humanOperation.operators ? [...row.humanOperation.operators] : [],
-      maintenanceInterventions: row.humanOperation.maintenanceInterventions ? [...row.humanOperation.maintenanceInterventions] : []
-    } : emptyHuman(),
-    recordEnvironment: !!row.environmentConditions,
-    recordHuman: !!row.humanOperation
+    createdAt: row.createdAt
   }
   showEditModal.value = true
 }
@@ -891,32 +354,15 @@ function handleEdit(row: TrialRound) {
 function handleEditTrial() {
   editFormRef.value?.validate((errors: any) => {
     if (!errors && scheme.value) {
-      const updateData: any = {
+      const res = schemeStore.updateTrial(scheme.value.id, editingRoundNo.value, {
         hidden: editForm.value.hidden,
         timeCost: editForm.value.timeCost,
         leakageRate: editForm.value.leakageRate,
         componentWear: editForm.value.componentWear,
         ropeWear: editForm.value.ropeWear,
         bucketWear: editForm.value.bucketWear,
-        notes: editForm.value.notes,
-        ropeId: editForm.value.ropeId,
-        bucketId: editForm.value.bucketId
-      }
-      if (editForm.value.recordEnvironment) {
-        updateData.environmentConditions = { ...editForm.value.environmentConditions }
-      } else {
-        updateData.environmentConditions = undefined
-      }
-      if (editForm.value.recordHuman) {
-        updateData.humanOperation = {
-          ...editForm.value.humanOperation,
-          operators: [...editForm.value.humanOperation.operators],
-          maintenanceInterventions: [...editForm.value.humanOperation.maintenanceInterventions]
-        }
-      } else {
-        updateData.humanOperation = undefined
-      }
-      const res = schemeStore.updateTrial(scheme.value.id, editingRoundNo.value, updateData)
+        notes: editForm.value.notes
+      })
       if (res.success) {
         message.success('修改已保存')
         showEditModal.value = false
@@ -947,53 +393,6 @@ function toggleHidden(row: TrialRound) {
   message.info(row.hidden ? '已取消隐藏，将计入统计' : '已隐藏，不计入统计')
 }
 
-function handleExportCsv() {
-  if (!scheme.value) return
-  const csv = schemeStore.exportTrialDetails(scheme.value.id)
-  if (!csv) {
-    message.warning('暂无数据可导出')
-    return
-  }
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${scheme.value.name}_试验明细_${Date.now()}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
-  message.success('导出成功')
-}
-
-function getAbnormalTagType(type: string): 'default' | 'info' | 'success' | 'warning' | 'error' {
-  switch (type) {
-    case 'timeout': return 'warning'
-    case 'highLeakage': return 'error'
-    case 'wearSpike': return 'info'
-    default: return 'success'
-  }
-}
-
-function getReviewTagType(status: ReviewStatus): 'default' | 'info' | 'success' | 'warning' | 'error' {
-  switch (status) {
-    case 'pending': return 'warning'
-    case 'approved': return 'success'
-    case 'rejected': return 'error'
-    default: return 'default'
-  }
-}
-
-function getRopeNo(ropeId: string | null): string {
-  if (!ropeId || !scheme.value) return '-'
-  const rope = scheme.value.ropes.find(r => r.id === ropeId)
-  return rope?.ropeNo || '-'
-}
-
-function getBucketNo(bucketId: string | null): string {
-  if (!bucketId || !scheme.value) return '-'
-  const bucket = scheme.value.buckets.find(b => b.id === bucketId)
-  return bucket?.bucketNo || '-'
-}
-
 const columns: DataTableColumns<TrialRound> = [
   {
     title: '轮次',
@@ -1004,27 +403,15 @@ const columns: DataTableColumns<TrialRound> = [
       { style: { fontWeight: 600 } },
       [
         `第 ${row.roundNo} 轮`,
-        row.hidden ? h('span', { style: { marginLeft: '6px', color: '#d03050', fontSize: '12px' } }, '🔒') : null
+        row.hidden ? h('span', { style: { marginLeft: '6px', color: '#d03050', fontSize: '12px' } }, '🔒已隐藏') : null
       ]
     )
-  },
-  {
-    title: '井绳编号',
-    key: 'ropeNo',
-    width: 110,
-    render: (row) => getRopeNo(row.ropeId)
-  },
-  {
-    title: '汲桶编号',
-    key: 'bucketNo',
-    width: 110,
-    render: (row) => getBucketNo(row.bucketId)
   },
   { title: '耗时 (秒)', key: 'timeCost', width: 100 },
   {
     title: '漏水率',
     key: 'leakageRate',
-    width: 100,
+    width: 110,
     render: (row) => h(
       'span',
       { style: { color: row.leakageRate > 20 ? '#d03050' : '#18a058', fontWeight: 500 } },
@@ -1034,7 +421,7 @@ const columns: DataTableColumns<TrialRound> = [
   {
     title: '有效水量',
     key: 'effectiveWater',
-    width: 100,
+    width: 110,
     render: (row) => {
       const bucket = scheme.value?.buckets[0]
       if (!bucket) return '-'
@@ -1045,7 +432,7 @@ const columns: DataTableColumns<TrialRound> = [
   {
     title: '效率 (L/s)',
     key: 'efficiency',
-    width: 100,
+    width: 110,
     render: (row) => {
       if (row.timeCost <= 0) return '-'
       const bucket = scheme.value?.buckets[0]
@@ -1054,36 +441,29 @@ const columns: DataTableColumns<TrialRound> = [
       return eff.toFixed(3)
     }
   },
-  { title: '井绳磨损', key: 'ropeWear', width: 90 },
-  { title: '汲桶磨损', key: 'bucketWear', width: 90 },
+  { title: '井绳磨损', key: 'ropeWear', width: 100 },
+  { title: '汲桶磨损', key: 'bucketWear', width: 100 },
   {
-    title: '异常类型',
-    key: 'abnormalType',
-    width: 110,
-    render: (row) => row.abnormalType === 'none'
-      ? h('n-tag', { type: 'success', size: 'small' }, () => '正常')
-      : h('n-tag', { type: getAbnormalTagType(row.abnormalType), size: 'small' }, () => ABNORMAL_TYPE_LABELS[row.abnormalType])
-  },
-  {
-    title: '审查状态',
-    key: 'reviewStatus',
-    width: 100,
-    render: (row) => h(
-      'n-tag',
-      { type: getReviewTagType(row.reviewStatus), size: 'small' },
-      () => REVIEW_STATUS_LABELS[row.reviewStatus]
-    )
+    title: '平均构件磨损',
+    key: 'avgCompWear',
+    width: 130,
+    render: (row) => {
+      const vals = Object.values(row.componentWear)
+      if (vals.length === 0) return '-'
+      const avg = vals.reduce((a, b) => a + b, 0) / vals.length
+      return avg.toFixed(2)
+    }
   },
   {
     title: '记录时间',
     key: 'createdAt',
-    width: 150,
+    width: 160,
     render: (row) => new Date(row.createdAt).toLocaleString('zh-CN')
   },
   {
     title: '操作',
     key: 'actions',
-    width: 200,
+    width: 220,
     render: (row) => h(
       'div',
       { style: { display: 'flex', gap: '8px' } },
