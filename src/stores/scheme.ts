@@ -6,8 +6,25 @@ import type {
   RopeConfig,
   BucketConfig,
   TrialRound,
-  SchemeImportResult
+  SchemeImportResult,
+  TrialTemplate,
+  TemplateImportResult
 } from '@/types'
+import {
+  calcSchemeStats,
+  calcGlobalAbnormalStats,
+  calcGlobalCumulativeWear,
+  calcTemplateComparisonDetail,
+  calcTemplateListForCompare,
+  type SchemeStatSummary,
+  type GlobalAbnormalStats,
+  type GlobalCumulativeWearData,
+  type TemplateComparisonDetail
+} from '@/services/statistics.service'
+import {
+  exportTraceableDetailsAsCsv,
+  triggerCsvDownload
+} from '@/services/export.service'
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substr(2, 9)
@@ -28,13 +45,19 @@ function createEmptyScheme(name: string): RecoveryScheme {
     trials: [],
     assemblyComplete: false,
     createdAt: now,
-    updatedAt: now
+    updatedAt: now,
+    abnormalRules: {
+      timeoutThreshold: 120,
+      highLeakageThreshold: 30,
+      wearSpikeThreshold: 3
+    }
   }
 }
 
 export const useSchemeStore = defineStore('scheme', () => {
   const schemes = ref<RecoveryScheme[]>([])
   const currentSchemeId = ref<string | null>(null)
+  const templates = ref<TrialTemplate[]>([])
 
   const currentScheme = computed(() => {
     return schemes.value.find(s => s.id === currentSchemeId.value) || null
@@ -225,7 +248,7 @@ export const useSchemeStore = defineStore('scheme', () => {
     return typeof value === 'number' && value >= 0 && value <= 100 && !isNaN(value)
   }
 
-  function addTrial(schemeId: string, trial: Omit<TrialRound, 'createdAt'>): { success: boolean; error?: string } {
+  function addTrial(schemeId: string, trial: Omit<TrialRound, 'createdAt' | 'roundNo'> & { roundNo?: number }): { success: boolean; error?: string } {
     const scheme = schemes.value.find(s => s.id === schemeId)
     if (!scheme) return { success: false, error: '方案不存在' }
     if (!scheme.assemblyComplete) return { success: false, error: '构件未完整装配，不能开始汲水试验' }
@@ -236,6 +259,11 @@ export const useSchemeStore = defineStore('scheme', () => {
     const roundNo = scheme.trials.length + 1
     const newTrial: TrialRound = {
       ...trial,
+      ropeId: trial.ropeId ?? scheme.ropes[0]?.id ?? null,
+      bucketId: trial.bucketId ?? scheme.buckets[0]?.id ?? null,
+      abnormalType: trial.abnormalType ?? 'none',
+      abnormalReason: trial.abnormalReason ?? '',
+      reviewStatus: trial.reviewStatus ?? 'pending',
       roundNo,
       createdAt: Date.now()
     }
@@ -299,7 +327,7 @@ export const useSchemeStore = defineStore('scheme', () => {
       if (Array.isArray(parsed)) {
         incoming = parsed
       } else if (validateSchemeData(parsed)) {
-        incoming = [parsed]
+          incoming = [parsed]
       } else {
         return { success: false, schemes: [], error: '数据格式无效：不是有效的方案文件' }
       }
@@ -339,25 +367,153 @@ export const useSchemeStore = defineStore('scheme', () => {
     }
   }
 
-  function getSchemeStats(schemeId: string) {
+  function getSchemeStats(schemeId: string): SchemeStatSummary | null {
     const scheme = schemes.value.find(s => s.id === schemeId)
     if (!scheme) return null
-    const visibleTrials = scheme.trials.filter(t => !t.hidden)
-    if (visibleTrials.length === 0) return null
+    return calcSchemeStats(scheme)
+  }
 
-    const avgTimeCost = visibleTrials.reduce((sum, t) => sum + t.timeCost, 0) / visibleTrials.length
-    const avgLeakage = visibleTrials.reduce((sum, t) => sum + t.leakageRate, 0) / visibleTrials.length
-    const avgRopeWear = visibleTrials.reduce((sum, t) => sum + t.ropeWear, 0) / visibleTrials.length
-    const avgBucketWear = visibleTrials.reduce((sum, t) => sum + t.bucketWear, 0) / visibleTrials.length
+  function getGlobalAbnormalStats(): GlobalAbnormalStats {
+    return calcGlobalAbnormalStats(schemes.value)
+  }
 
-    const bucket = scheme.buckets[0]
-    const avgEfficiency = bucket ? (bucket.capacity * (1 - avgLeakage / 100)) / avgTimeCost : 0
+  function getGlobalCumulativeWear(): GlobalCumulativeWearData | null {
+    return calcGlobalCumulativeWear(schemes.value)
+  }
 
-    return { avgTimeCost, avgLeakage, avgRopeWear, avgBucketWear, avgEfficiency, visibleCount: visibleTrials.length }
+  function getTemplateComparisonDetail(templateIds: string[]): TemplateComparisonDetail[] {
+    return calcTemplateComparisonDetail(templates.value, schemes.value, templateIds)
+  }
+
+  function exportTraceableDetails(): string {
+    return exportTraceableDetailsAsCsv(schemes.value)
+  }
+
+  function exportTraceableDetailsAndDownload(): void {
+    const csv = exportTraceableDetailsAsCsv(schemes.value)
+    if (!csv || csv.split('\n').length <= 1) {
+      return
+    }
+    triggerCsvDownload(csv, `可追溯试验明细_${Date.now()}.csv`)
+  }
+
+  function createTemplate(name: string, baseSchemeId?: string): string {
+    const baseScheme = baseSchemeId ? schemes.value.find(s => s.id === baseSchemeId) : undefined
+    const now = Date.now()
+    const tpl: TrialTemplate = {
+      id: generateId(),
+      name,
+      description: baseScheme?.description || '',
+      wellConfig: baseScheme?.wellConfig || null,
+      components: baseScheme?.components.map(c => {
+        const { id: any, ...rest } = c
+        return rest
+      }) || [],
+      ropes: baseScheme?.ropes.map(r => {
+        const { id: any, ...rest } = r
+        return rest
+      }) || [],
+      buckets: baseScheme?.buckets.map(b => {
+        const { id: any, ...rest } = b
+        return rest
+      }) || [],
+      totalRounds: baseScheme?.totalRounds || 10,
+      abnormalRules: baseScheme?.abnormalRules || {
+        timeoutThreshold: 120,
+        highLeakageThreshold: 30,
+        wearSpikeThreshold: 3
+      },
+      tag: '',
+      createdAt: now,
+      updatedAt: now,
+      usageCount: 0
+    }
+    templates.value.push(tpl)
+    return tpl.id
+  }
+
+  function deleteTemplate(id: string): boolean {
+    const idx = templates.value.findIndex(t => t.id === id)
+    if (idx === -1) return false
+    templates.value.splice(idx, 1)
+    return true
+  }
+
+  function updateTemplate(id: string, data: Partial<TrialTemplate>) {
+    const tpl = templates.value.find(t => t.id === id)
+    if (!tpl) return
+    Object.assign(tpl, data)
+    tpl.updatedAt = Date.now()
+  }
+
+  function createSchemeFromTemplate(templateId: string, schemeName: string): string | null {
+    const tpl = templates.value.find(t => t.id === templateId)
+    if (!tpl) return null
+    const schemeId = createScheme(schemeName)
+    updateWellConfig(schemeId, tpl.wellConfig)
+    tpl.components.forEach(c => addComponent(schemeId, c))
+    tpl.ropes.forEach(r => addRope(schemeId, r))
+    tpl.buckets.forEach(b => addBucket(schemeId, b))
+    updateSchemeMeta(schemeId, schemeName, tpl.description || '', tpl.totalRounds)
+    const scheme = schemes.value.find(s => s.id === schemeId)
+    if (scheme) {
+      scheme.templateId = tpl.id
+      scheme.abnormalRules = { ...tpl.abnormalRules }
+    }
+    tpl.usageCount = (tpl.usageCount || 0) + 1
+    tpl.updatedAt = Date.now()
+    return schemeId
+  }
+
+  function validateTemplateData(data: any): data is TrialTemplate {
+    if (!data || typeof data !== 'object') return false
+    if (typeof data.id !== 'string' || typeof data.name !== 'string') return false
+    if (!Array.isArray(data.components) || !Array.isArray(data.ropes) || !Array.isArray(data.buckets)) return false
+    return true
+  }
+
+  function importTemplates(jsonData: string, overwrite: boolean = false): TemplateImportResult {
+    try {
+      const parsed = JSON.parse(jsonData)
+      let incoming: any[] = []
+      if (Array.isArray(parsed)) {
+        incoming = parsed
+      } else if (validateTemplateData(parsed)) {
+        incoming = [parsed]
+      } else {
+        return { success: false, templates: [], error: '数据格式无效：不是有效的模板文件' }
+      }
+      const validTpls: TrialTemplate[] = []
+      for (const item of incoming) {
+        if (validateTemplateData(item)) validTpls.push(item as TrialTemplate)
+      }
+      if (validTpls.length === 0) return { success: false, templates: [], error: '没有有效的模板数据可导入' }
+      if (!overwrite) {
+        validTpls.forEach(t => {
+          t.id = generateId()
+          t.createdAt = Date.now()
+          t.updatedAt = Date.now()
+          templates.value.push(t)
+        })
+      } else {
+          validTpls.forEach(t => {
+            const existingIdx = templates.value.findIndex(x => x.name === t.name)
+            if (existingIdx !== -1) {
+              templates.value[existingIdx] = { ...t, updatedAt: Date.now() }
+            } else {
+              templates.value.push({ ...t, createdAt: Date.now(), updatedAt: Date.now() })
+            }
+          })
+        }
+      return { success: true, templates: validTpls }
+    } catch (e) {
+      return { success: false, templates: [], error: '解析失败：JSON 格式不正确' }
+    }
   }
 
   return {
     schemes,
+    templates,
     currentSchemeId,
     currentScheme,
     schemeList,
@@ -389,6 +545,18 @@ export const useSchemeStore = defineStore('scheme', () => {
     exportSchemes,
     importSchemes,
     validateSchemeData,
-    getSchemeStats
+    getSchemeStats,
+    getGlobalAbnormalStats,
+    getGlobalCumulativeWear,
+    getTemplateComparisonDetail,
+    exportTraceableDetails,
+    exportTraceableDetailsAndDownload,
+    createTemplate,
+    deleteTemplate,
+    updateTemplate,
+    createSchemeFromTemplate,
+    validateTemplateData,
+    importTemplates,
+    checkAssemblyComplete
   }
 })

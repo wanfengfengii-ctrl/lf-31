@@ -225,125 +225,74 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, onMounted } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useMessage, type DataTableColumns } from 'naive-ui'
 import { useSchemeStore } from '@/stores/scheme'
 import { useKnowledgeGraphStore } from '@/stores/knowledgeGraph'
-import { ABNORMAL_TYPE_LABELS, WELL_TYPE_OPTIONS, type RecoveryScheme, type TrialRound } from '@/types'
+import { WELL_TYPE_OPTIONS, type RecoveryScheme } from '@/types'
 import KnowledgeGraphView from '@/components/KnowledgeGraphView.vue'
 import RiskWarningPanel from '@/components/RiskWarningPanel.vue'
 import SimilarSchemeSearch from '@/components/SimilarSchemeSearch.vue'
 import MaintenanceStrategy from '@/components/MaintenanceStrategy.vue'
 import EfficiencyPrediction from '@/components/EfficiencyPrediction.vue'
 
+import {
+  calcSummaryDataRow,
+  getAvg,
+  getAvgEfficiency,
+  getAvgComponentWear,
+  type SummaryDataRow
+} from '@/services/statistics.service'
+import {
+  createBarOption,
+  createGroupedBarOption,
+  createPieOption,
+  createLineOption,
+  createEfficiencyComparisonOption,
+  createTimeCostComparisonOption,
+  createLeakageComparisonOption,
+  createWearComparisonOption,
+  createSingleTrendOption,
+  createSingleWearOption,
+  DEFAULT_PALETTE
+} from '@/services/charts.service'
+
 const schemeStore = useSchemeStore()
 const knowledgeGraphStore = useKnowledgeGraphStore()
 const message = useMessage()
 
-const analysisTab = ref('scheme')
-const checkedIds = ref<string[]>([])
-const checkedTemplateIds = ref<string[]>([])
-
-interface AvailableSchemeItem {
-  id: string
-  name: string
-  completedRounds: number
-  totalRounds: number
-  visibleRounds: number
-  hasVisibleTrials: boolean
-}
-
-const availableSchemesList = computed<AvailableSchemeItem[]>(() => {
-  const list: AvailableSchemeItem[] = []
-  schemeStore.schemes.forEach(s => {
-    if (s.trials.length > 0) {
-      const visibleRounds = s.trials.filter(t => !t.hidden).length
-      list.push({
-        id: s.id,
-        name: s.name,
-        completedRounds: s.completedRounds,
-        totalRounds: s.totalRounds,
-        visibleRounds,
-        hasVisibleTrials: visibleRounds > 0
-      })
-    }
-  })
-  return list
+const analysisTab = computed({
+  get: () => filters.analysisTab.value,
+  set: (v: string) => { filters.analysisTab.value = v }
+})
+const checkedIds = computed({
+  get: () => filters.checkedSchemeIds.value,
+  set: (v: string[]) => { filters.checkedSchemeIds.value = v }
+})
+const checkedTemplateIds = computed({
+  get: () => filters.checkedTemplateIds.value,
+  set: (v: string[]) => { filters.checkedTemplateIds.value = v }
 })
 
-watch(availableSchemesList, (list) => {
-  const enabledIds = list.filter(s => s.hasVisibleTrials).map(s => s.id)
-  const cleaned = checkedIds.value.filter(id => enabledIds.includes(id))
-  if (cleaned.length !== checkedIds.value.length) {
-    checkedIds.value = cleaned
-  }
-}, { immediate: true, deep: true })
+import { useAnalysisFilters } from '@/composables/useAnalysisFilters'
+const filters = useAnalysisFilters(
+  () => schemeStore.schemes,
+  () => schemeStore.templates
+)
 
-const selectedSchemes = computed((): RecoveryScheme[] => {
-  return schemeStore.schemes.filter(s =>
-    checkedIds.value.includes(s.id) && s.trials.some(t => !t.hidden)
-  )
-})
+const availableSchemesList = filters.availableSchemesList
+const templateListForCompare = filters.templateListForCompare
+const selectedSchemes = filters.selectedSchemes
 
 const abnormalStats = computed(() => schemeStore.getGlobalAbnormalStats())
-
 const globalWearData = computed(() => schemeStore.getGlobalCumulativeWear())
-
-const templateListForCompare = computed(() =>
-  schemeStore.templates
-    .filter(t => schemeStore.schemes.some(s => s.templateId === t.id && s.trials.length > 0))
-    .map(t => {
-      const schemeCount = schemeStore.schemes.filter(s => s.templateId === t.id).length
-      return { id: t.id, name: t.name, schemeCount, totalRounds: t.totalRounds }
-    })
-)
 
 const templateCompareData = computed(() => {
   if (checkedTemplateIds.value.length < 2) return []
   return schemeStore.getTemplateComparisonDetail(checkedTemplateIds.value) as any[]
 })
 
-function getVisibleTrials(sch: RecoveryScheme): TrialRound[] {
-  return sch.trials.filter(t => !t.hidden && t.reviewStatus === 'approved')
-}
-
-function getAvg(sch: RecoveryScheme, key: keyof TrialRound): number {
-  const trials = getVisibleTrials(sch)
-  if (trials.length === 0) return 0
-  const total = trials.reduce((sum, t) => {
-    const v = (t as any)[key]
-    return sum + (typeof v === 'number' ? v : 0)
-  }, 0)
-  return total / trials.length
-}
-
-function getAvgEfficiency(sch: RecoveryScheme): number {
-  const trials = getVisibleTrials(sch)
-  if (trials.length === 0 || !sch.buckets[0]) return 0
-  const bucketCap = sch.buckets[0].capacity
-  const totalEff = trials.reduce((sum, t) => {
-    const eff = t.timeCost > 0 ? (bucketCap * (1 - t.leakageRate / 100)) / t.timeCost : 0
-    return sum + eff
-  }, 0)
-  return totalEff / trials.length
-}
-
-function getAvgComponentWear(sch: RecoveryScheme): number {
-  const trials = getVisibleTrials(sch)
-  if (trials.length === 0) return 0
-  let total = 0
-  let count = 0
-  trials.forEach(t => {
-    const vals = Object.values(t.componentWear)
-    if (vals.length > 0) {
-      total += vals.reduce((a, b) => a + b, 0) / vals.length
-      count++
-    }
-  })
-  return count > 0 ? total / count : 0
-}
-
-const palette = ['#18a058', '#2080f0', '#f0a020', '#d03050', '#722ed1', '#13c2c2', '#eb2f96']
+const palette = DEFAULT_PALETTE
 
 function ensureAnalysisDemoData() {
   const selectableScheme = schemeStore.schemes.find(s => s.name === '测试方案-待审查不可统计')
@@ -395,7 +344,6 @@ function ensureAnalysisDemoData() {
     const id = createBaseScheme('测试方案-待审查不可统计')
     const scheme = schemeStore.schemes.find(s => s.id === id)
     schemeStore.addTrial(id, {
-      roundNo: 0,
       hidden: false,
       timeCost: 300,
       leakageRate: 80,
@@ -426,16 +374,15 @@ function ensureAnalysisDemoData() {
       { ropeWear: 1, bucketWear: 1, timeCost: 60, leakageRate: 10 },
       { ropeWear: 3, bucketWear: 2, timeCost: 62, leakageRate: 12 },
       { ropeWear: 2, bucketWear: 4, timeCost: 58, leakageRate: 9 }
-    ].forEach((item, index) => {
+    ].forEach((item) => {
       schemeStore.addTrial(id, {
-        roundNo: 0,
         hidden: false,
         timeCost: item.timeCost,
         leakageRate: item.leakageRate,
-        componentWear: compWear(index + 1),
+        componentWear: compWear(item.ropeWear),
         ropeWear: item.ropeWear,
         bucketWear: item.bucketWear,
-        notes: `磨损验证轮次${index + 1}`,
+        notes: `磨损验证轮次`,
         ropeId: scheme?.ropes[0]?.id || null,
         bucketId: scheme?.buckets[0]?.id || null,
         abnormalType: 'none',
@@ -452,128 +399,23 @@ onMounted(() => {
 })
 
 watch(analysisTab, (newTab) => {
-  if (newTab === 'knowledgeGraph' || newTab === 'riskWarning' || newTab === 'maintenance' || newTab === 'prediction') {
+  if (['knowledgeGraph', 'riskWarning', 'maintenance', 'prediction'].includes(newTab)) {
     knowledgeGraphStore.buildGraph()
   }
 })
 
-const efficiencyOption = computed(() => {
-  const names = selectedSchemes.value.map(s => s.name)
-  const vals = selectedSchemes.value.map(s => Number(getAvgEfficiency(s).toFixed(3)))
-  return {
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-    xAxis: { type: 'category', data: names },
-    yAxis: { type: 'value', name: 'L/s' },
-    series: [{
-      type: 'bar',
-      data: vals.map((v, i) => ({ value: v, itemStyle: { color: palette[i % palette.length] } })),
-      label: { show: true, position: 'top', formatter: '{c}' },
-      barMaxWidth: 60
-    }]
-  }
-})
+const efficiencyOption = computed(() => createEfficiencyComparisonOption(selectedSchemes.value))
 
-const timeCostOption = computed(() => {
-  const names = selectedSchemes.value.map(s => s.name)
-  const vals = selectedSchemes.value.map(s => Number(getAvg(s, 'timeCost').toFixed(2)))
-  return {
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-    xAxis: { type: 'category', data: names },
-    yAxis: { type: 'value', name: '秒' },
-    series: [{
-      type: 'bar',
-      data: vals.map((v, i) => ({ value: v, itemStyle: { color: palette[i % palette.length] } })),
-      label: { show: true, position: 'top', formatter: '{c}s' },
-      barMaxWidth: 60
-    }]
-  }
-})
+const timeCostOption = computed(() => createTimeCostComparisonOption(selectedSchemes.value))
 
-const leakageOption = computed(() => {
-  const names = selectedSchemes.value.map(s => s.name)
-  const vals = selectedSchemes.value.map(s => Number(getAvg(s, 'leakageRate').toFixed(2)))
-  return {
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-    xAxis: { type: 'category', data: names },
-    yAxis: { type: 'value', name: '%', max: 100 },
-    series: [{
-      type: 'bar',
-      data: vals.map((v, i) => ({
-        value: v,
-        itemStyle: { color: v > 20 ? '#d03050' : palette[i % palette.length] }
-      })),
-      label: { show: true, position: 'top', formatter: '{c}%' },
-      markLine: {
-        data: [{ yAxis: 20, name: '漏水警戒线20%', lineStyle: { color: '#d03050', type: 'dashed' } }]
-      },
-      barMaxWidth: 60
-    }]
-  }
-})
+const leakageOption = computed(() => createLeakageComparisonOption(selectedSchemes.value))
 
-const wearOption = computed(() => {
-  const names = selectedSchemes.value.map(s => s.name)
-  return {
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    legend: { data: ['构件磨损均值', '井绳磨损', '汲桶磨损'] },
-    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-    xAxis: { type: 'category', data: names },
-    yAxis: { type: 'value', name: '磨损等级', max: 10 },
-    series: [
-      {
-        name: '构件磨损均值',
-        type: 'bar',
-        data: selectedSchemes.value.map(s => Number(getAvgComponentWear(s).toFixed(2))),
-        itemStyle: { color: '#2080f0' },
-        barMaxWidth: 40
-      },
-      {
-        name: '井绳磨损',
-        type: 'bar',
-        data: selectedSchemes.value.map(s => Number(getAvg(s, 'ropeWear').toFixed(2))),
-        itemStyle: { color: '#f0a020' },
-        barMaxWidth: 40
-      },
-      {
-        name: '汲桶磨损',
-        type: 'bar',
-        data: selectedSchemes.value.map(s => Number(getAvg(s, 'bucketWear').toFixed(2))),
-        itemStyle: { color: '#d03050' },
-        barMaxWidth: 40
-      }
-    ]
-  }
-})
+const wearOption = computed(() => createWearComparisonOption(selectedSchemes.value))
 
-const summaryData = computed(() => {
+const summaryData = computed<SummaryDataRow[]>(() => {
   return selectedSchemes.value.map(sch => {
-    const trials = getVisibleTrials(sch)
-    const bucket = sch.buckets[0]
-    const avgTime = getAvg(sch, 'timeCost')
-    const avgLeak = getAvg(sch, 'leakageRate')
-    const avgEff = getAvgEfficiency(sch)
-    const totalWater = bucket
-      ? trials.reduce((sum, t) => sum + bucket.capacity * (1 - t.leakageRate / 100), 0)
-      : 0
     const stats = schemeStore.getSchemeStats(sch.id)
-    return {
-      id: sch.id,
-      name: sch.name,
-      visibleRounds: trials.length,
-      componentCount: sch.components.length,
-      bucketInfo: bucket ? `${bucket.capacity}L ${bucket.material}` : '-',
-      avgTime: avgTime.toFixed(2),
-      avgLeakage: avgLeak.toFixed(2),
-      avgEfficiency: avgEff.toFixed(3),
-      totalWater: totalWater.toFixed(1),
-      ropeWear: getAvg(sch, 'ropeWear').toFixed(2),
-      bucketWear: getAvg(sch, 'bucketWear').toFixed(2),
-      compWear: getAvgComponentWear(sch).toFixed(2),
-      abnormalRate: stats ? stats.abnormalRate.toFixed(1) + '%' : '-'
-    }
+    return calcSummaryDataRow(sch, stats)
   })
 })
 
@@ -594,86 +436,57 @@ const summaryColumns: DataTableColumns<any> = [
 
 const templateEfficiencyOption = computed(() => {
   const data = templateCompareData.value
-  return {
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-    xAxis: { type: 'category', data: data.map((d: any) => d.templateName) },
-    yAxis: { type: 'value', name: 'L/s' },
-    series: [{
-      type: 'bar',
-      data: data.map((d: any, i: number) => ({
-        value: Number(d.avgEfficiency.toFixed(3)),
-        itemStyle: { color: palette[i % palette.length] }
-      })),
-      label: { show: true, position: 'top', formatter: '{c}' },
-      barMaxWidth: 60
-    }]
-  }
+  return createBarOption(
+    data.map((d: any) => d.templateName),
+    data.map((d: any) => Number(d.avgEfficiency.toFixed(3))),
+    { yName: 'L/s', valueFormatter: (v) => String(v) }
+  )
 })
 
 const templateAbnormalOption = computed(() => {
   const data = templateCompareData.value
-  return {
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-    xAxis: { type: 'category', data: data.map((d: any) => d.templateName) },
-    yAxis: { type: 'value', name: '%', max: 100 },
-    series: [{
-      type: 'bar',
-      data: data.map((d: any, i: number) => ({
-        value: Number(d.abnormalRate.toFixed(1)),
-        itemStyle: { color: d.abnormalRate > 30 ? '#d03050' : palette[i % palette.length] }
-      })),
-      label: { show: true, position: 'top', formatter: '{c}%' },
-      barMaxWidth: 60
-    }]
-  }
+  return createBarOption(
+    data.map((d: any) => d.templateName),
+    data.map((d: any) => Number(d.abnormalRate.toFixed(1))),
+    {
+      yName: '%',
+      yMax: 100,
+      colorFn: (v) => v > 30 ? '#d03050' : undefined,
+      valueFormatter: (v) => `${v}%`
+    }
+  )
 })
 
 const templateLeakageOption = computed(() => {
   const data = templateCompareData.value
-  return {
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-    xAxis: { type: 'category', data: data.map((d: any) => d.templateName) },
-    yAxis: { type: 'value', name: '%' },
-    series: [{
-      type: 'bar',
-      data: data.map((d: any, i: number) => ({
-        value: Number(d.avgLeakageRate.toFixed(2)),
-        itemStyle: { color: palette[i % palette.length] }
-      })),
-      label: { show: true, position: 'top', formatter: '{c}%' },
-      barMaxWidth: 60
-    }]
-  }
+  return createBarOption(
+    data.map((d: any) => d.templateName),
+    data.map((d: any) => Number(d.avgLeakageRate.toFixed(2))),
+    {
+      yName: '%',
+      valueFormatter: (v) => `${v}%`
+    }
+  )
 })
 
 const templateWearOption = computed(() => {
   const data = templateCompareData.value
-  return {
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    legend: { data: ['井绳磨损', '汲桶磨损'] },
-    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-    xAxis: { type: 'category', data: data.map((d: any) => d.templateName) },
-    yAxis: { type: 'value', name: '磨损等级' },
-    series: [
+  return createGroupedBarOption(
+    data.map((d: any) => d.templateName),
+    [
       {
         name: '井绳磨损',
-        type: 'bar',
         data: data.map((d: any) => Number(d.avgRopeWear.toFixed(2))),
-        itemStyle: { color: '#f0a020' },
-        barMaxWidth: 40
+        color: '#f0a020'
       },
       {
         name: '汲桶磨损',
-        type: 'bar',
         data: data.map((d: any) => Number(d.avgBucketWear.toFixed(2))),
-        itemStyle: { color: '#d03050' },
-        barMaxWidth: 40
+        color: '#d03050'
       }
-    ]
-  }
+    ],
+    { yName: '磨损等级' }
+  )
 })
 
 const templateCompareColumns: DataTableColumns<any> = [
@@ -698,20 +511,8 @@ const abnormalPieOption = computed(() => {
     { value: stats.abnormalByType.timeout || 0, name: '超时异常', itemStyle: { color: '#f0a020' } },
     { value: stats.abnormalByType.highLeakage || 0, name: '漏水过高', itemStyle: { color: '#d03050' } },
     { value: stats.abnormalByType.wearSpike || 0, name: '磨损突增', itemStyle: { color: '#2080f0' } }
-  ].filter(d => d.value > 0)
-
-  return {
-    tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-    legend: { bottom: 0 },
-    series: [{
-      type: 'pie',
-      radius: ['40%', '70%'],
-      avoidLabelOverlap: true,
-      itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
-      label: { show: true, formatter: '{b}\n{d}%' },
-      data
-    }]
-  }
+  ]
+  return createPieOption(data)
 })
 
 const reviewPieOption = computed(() => {
@@ -720,20 +521,8 @@ const reviewPieOption = computed(() => {
     { value: stats.approvedReviews, name: '已通过', itemStyle: { color: '#18a058' } },
     { value: stats.pendingReviews, name: '待审查', itemStyle: { color: '#f0a020' } },
     { value: stats.rejectedReviews, name: '已驳回', itemStyle: { color: '#d03050' } }
-  ].filter(d => d.value > 0)
-
-  return {
-    tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-    legend: { bottom: 0 },
-    series: [{
-      type: 'pie',
-      radius: ['40%', '70%'],
-      avoidLabelOverlap: true,
-      itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
-      label: { show: true, formatter: '{b}\n{d}%' },
-      data
-    }]
-  }
+  ]
+  return createPieOption(data)
 })
 
 const schemeAbnormalBarOption = computed(() => {
@@ -743,168 +532,48 @@ const schemeAbnormalBarOption = computed(() => {
     const stats = schemeStore.getSchemeStats(s.id)
     return stats ? Number(stats.abnormalRate.toFixed(1)) : 0
   })
-  return {
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-    xAxis: { type: 'category', data: names },
-    yAxis: { type: 'value', name: '%', max: 100 },
-    series: [{
-      type: 'bar',
-      data: rates.map((v, i) => ({
-        value: v,
-        itemStyle: { color: v > 30 ? '#d03050' : v > 15 ? '#f0a020' : '#18a058' }
-      })),
-      label: { show: true, position: 'top', formatter: '{c}%' },
-      barMaxWidth: 60
-    }]
-  }
+  return createBarOption(names, rates, {
+    yName: '%',
+    yMax: 100,
+    colorFn: (v) => v > 30 ? '#d03050' : v > 15 ? '#f0a020' : '#18a058',
+    valueFormatter: (v) => `${v}%`
+  })
 })
 
 const globalWearOption = computed(() => {
   const data = globalWearData.value
   if (!data) return {}
 
-  return {
-    tooltip: { trigger: 'axis' },
-    legend: { data: ['井绳累计磨损', '汲桶累计磨损'] },
-    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-    xAxis: { type: 'category', data: data.labels },
-    yAxis: { type: 'value', name: '累计磨损等级' },
-    dataZoom: [
-      { type: 'inside', start: 0, end: 100 },
-      { type: 'slider', start: 0, end: 100 }
-    ],
-    series: [
+  return createLineOption(
+    data.labels,
+    [
       {
         name: '井绳累计磨损',
-        type: 'line',
-        smooth: true,
         data: data.ropeCumulative,
-        itemStyle: { color: '#f0a020' },
-        areaStyle: { opacity: 0.2 }
+        color: '#f0a020',
+        area: true
       },
       {
         name: '汲桶累计磨损',
-        type: 'line',
-        smooth: true,
         data: data.bucketCumulative,
-        itemStyle: { color: '#d03050' },
-        areaStyle: { opacity: 0.2 }
+        color: '#d03050',
+        area: true
       }
-    ]
-  }
+    ],
+    {
+      yNames: ['累计磨损等级'],
+      dataZoom: true,
+      top: 50
+    }
+  )
 })
 
 function getSingleTrendOption(sch: RecoveryScheme, mode: 'timeAndLeak' | 'efficiency') {
-  const trials = getVisibleTrials(sch)
-  const labels = trials.map(t => `第${t.roundNo}轮`)
-  const bucket = sch.buckets[0]
-
-  if (mode === 'timeAndLeak') {
-    return {
-      tooltip: { trigger: 'axis' },
-      legend: { data: ['提水耗时(s)', '漏水率(%)'] },
-      grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-      xAxis: { type: 'category', data: labels },
-      yAxis: [
-        { type: 'value', name: '秒', position: 'left' },
-        { type: 'value', name: '%', position: 'right', max: 100 }
-      ],
-      series: [
-        {
-          name: '提水耗时(s)',
-          type: 'line',
-          smooth: true,
-          data: trials.map(t => t.timeCost),
-          itemStyle: { color: '#2080f0' },
-          yAxisIndex: 0,
-          areaStyle: { opacity: 0.15 }
-        },
-        {
-          name: '漏水率(%)',
-          type: 'line',
-          smooth: true,
-          data: trials.map(t => t.leakageRate),
-          itemStyle: { color: '#f0a020' },
-          yAxisIndex: 1
-        }
-      ]
-    }
-  } else {
-    return {
-      tooltip: { trigger: 'axis' },
-      grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-      xAxis: { type: 'category', data: labels },
-      yAxis: { type: 'value', name: 'L/s' },
-      series: [{
-        name: '提水效率(L/s)',
-        type: 'line',
-        smooth: true,
-        data: trials.map(t =>
-          bucket && t.timeCost > 0
-            ? Number(((bucket.capacity * (1 - t.leakageRate / 100)) / t.timeCost).toFixed(3))
-            : 0
-        ),
-        itemStyle: { color: '#18a058' },
-        areaStyle: { opacity: 0.2 },
-        markLine: {
-          data: [{ type: 'average', name: '平均值' }]
-        }
-      }]
-    }
-  }
+  return createSingleTrendOption(sch, mode)
 }
 
 function getSingleWearOption(sch: RecoveryScheme) {
-  const trials = getVisibleTrials(sch)
-  const labels = trials.map(t => `第${t.roundNo}轮`)
-  const comps = sch.components
-
-  const series: any[] = comps.map((c, i) => {
-    let cumulative = 0
-    return {
-      name: `${c.componentNo}`,
-      type: 'line',
-      smooth: true,
-      data: trials.map(t => {
-        cumulative += (t.componentWear[c.id] || 0)
-        return Number(cumulative.toFixed(2))
-      }),
-      itemStyle: { color: palette[i % palette.length] }
-    }
-  })
-
-  let ropeCum = 0
-  series.push({
-    name: '井绳',
-    type: 'line',
-    smooth: true,
-    data: trials.map(t => {
-      ropeCum += t.ropeWear
-      return Number(ropeCum.toFixed(2))
-    }),
-    itemStyle: { color: '#000000' }
-  })
-  let bucketCum = 0
-  series.push({
-    name: '汲桶',
-    type: 'line',
-    smooth: true,
-    data: trials.map(t => {
-      bucketCum += t.bucketWear
-      return Number(bucketCum.toFixed(2))
-    }),
-    itemStyle: { color: '#722ed1' }
-  })
-
-  return {
-    tooltip: { trigger: 'axis' },
-    legend: { type: 'scroll', top: 0 },
-    grid: { left: '3%', right: '4%', bottom: '3%', top: 50, containLabel: true },
-    xAxis: { type: 'category', data: labels },
-    yAxis: { type: 'value', name: '累计磨损等级' },
-    series
-  }
+  return createSingleWearOption(sch, palette)
 }
 
 function handleExportTraceable() {

@@ -79,27 +79,27 @@
     </n-card>
 
     <n-modal
-      v-model:show="showAddModal"
+      v-model:show="formState.showAddModal.value"
       preset="card"
       title="记录汲水试验轮次"
       style="width: 640px"
     >
       <n-form
         ref="addFormRef"
-        :model="addForm"
-        :rules="addRules"
+        :model="formState.addForm.value"
+        :rules="formState.addRules"
         label-placement="left"
         label-width="140px"
       >
         <n-form-item label="轮次编号">
-          <n-input :value="`第 ${nextRoundNo} 轮`" disabled />
+          <n-input :value="`第 ${formState.nextRoundNo.value} 轮`" disabled />
         </n-form-item>
         <n-form-item label="提水耗时 (秒)" path="timeCost">
-          <n-input-number v-model:value="addForm.timeCost" :min="0" :max="3600" :step="0.1" style="width: 100%" />
+          <n-input-number v-model:value="formState.addForm.value.timeCost" :min="0" :max="3600" :step="0.1" style="width: 100%" />
           <span style="color: #999; font-size: 12px">从井底到地面的完整提水时间，不能小于 0</span>
         </n-form-item>
         <n-form-item label="漏水率 (%)" path="leakageRate">
-          <n-input-number v-model:value="addForm.leakageRate" :min="0" :max="100" :step="0.1" style="width: 100%" />
+          <n-input-number v-model:value="formState.addForm.value.leakageRate" :min="0" :max="100" :step="0.1" style="width: 100%" />
           <span style="color: #999; font-size: 12px">提水过程中漏出水量占比，必须在 0 - 100 之间</span>
         </n-form-item>
 
@@ -113,7 +113,7 @@
             :path="`componentWear.${comp.id}`"
           >
             <n-input-number
-              v-model:value="addForm.componentWear[comp.id]"
+              v-model:value="formState.addForm.value.componentWear[comp.id]"
               :min="0"
               :max="10"
               :step="0.1"
@@ -124,52 +124,52 @@
         </n-space>
         <n-grid :cols="2" :x-gap="12">
           <n-form-item label="井绳磨损" path="ropeWear" :show-label="true">
-            <n-input-number v-model:value="addForm.ropeWear" :min="0" :max="10" :step="0.1" style="width: 100%" />
+            <n-input-number v-model:value="formState.addForm.value.ropeWear" :min="0" :max="10" :step="0.1" style="width: 100%" />
           </n-form-item>
           <n-form-item label="汲桶磨损" path="bucketWear" :show-label="true">
-            <n-input-number v-model:value="addForm.bucketWear" :min="0" :max="10" :step="0.1" style="width: 100%" />
+            <n-input-number v-model:value="formState.addForm.value.bucketWear" :min="0" :max="10" :step="0.1" style="width: 100%" />
           </n-form-item>
         </n-grid>
         <n-divider style="margin: 8px 0" />
         <n-form-item label="隐藏此轮次" path="hidden">
-          <n-switch v-model:value="addForm.hidden" round />
+          <n-switch v-model:value="formState.addForm.value.hidden" round />
           <span style="color: #999; font-size: 12px; margin-left: 8px">
             开启后该轮次不会计入统计图表，用于剔除异常试验
           </span>
         </n-form-item>
         <n-form-item label="备注" path="notes">
-          <n-input v-model:value="addForm.notes" type="textarea" placeholder="可选：异常情况或备注说明" :rows="2" />
+          <n-input v-model:value="formState.addForm.value.notes" type="textarea" placeholder="可选：异常情况或备注说明" :rows="2" />
         </n-form-item>
       </n-form>
       <template #footer>
         <n-space justify="end">
-          <n-button @click="showAddModal = false">取消</n-button>
+          <n-button @click="closeAddModal">取消</n-button>
           <n-button type="primary" @click="handleAddTrial">保存记录</n-button>
         </n-space>
       </template>
     </n-modal>
 
     <n-modal
-      v-model:show="showEditModal"
+      v-model:show="formState.showEditModal.value"
       preset="card"
       title="编辑试验记录"
       style="width: 640px"
     >
       <n-form
         ref="editFormRef"
-        :model="editForm"
-        :rules="editRules"
+        :model="formState.editForm.value"
+        :rules="formState.editRules"
         label-placement="left"
         label-width="140px"
       >
         <n-form-item label="轮次编号">
-          <n-input :value="`第 ${editingRoundNo} 轮`" disabled />
+          <n-input :value="`第 ${formState.editingRoundNo.value} 轮`" disabled />
         </n-form-item>
         <n-form-item label="提水耗时 (秒)" path="timeCost">
-          <n-input-number v-model:value="editForm.timeCost" :min="0" :max="3600" :step="0.1" style="width: 100%" />
+          <n-input-number v-model:value="formState.editForm.value.timeCost" :min="0" :max="3600" :step="0.1" style="width: 100%" />
         </n-form-item>
         <n-form-item label="漏水率 (%)" path="leakageRate">
-          <n-input-number v-model:value="editForm.leakageRate" :min="0" :max="100" :step="0.1" style="width: 100%" />
+          <n-input-number v-model:value="formState.editForm.value.leakageRate" :min="0" :max="100" :step="0.1" style="width: 100%" />
         </n-form-item>
         <n-divider style="margin: 8px 0" />
         <div style="font-weight: 600; margin-bottom: 12px; color: #333">构件磨损记录</div>
@@ -180,7 +180,7 @@
             :label="`${comp.componentNo}`"
           >
             <n-input-number
-              v-model:value="editForm.componentWear[comp.id]"
+              v-model:value="formState.editForm.value.componentWear[comp.id]"
               :min="0"
               :max="10"
               :step="0.1"
@@ -190,23 +190,23 @@
         </n-space>
         <n-grid :cols="2" :x-gap="12">
           <n-form-item label="井绳磨损" :show-label="true">
-            <n-input-number v-model:value="editForm.ropeWear" :min="0" :max="10" :step="0.1" style="width: 100%" />
+            <n-input-number v-model:value="formState.editForm.value.ropeWear" :min="0" :max="10" :step="0.1" style="width: 100%" />
           </n-form-item>
           <n-form-item label="汲桶磨损" :show-label="true">
-            <n-input-number v-model:value="editForm.bucketWear" :min="0" :max="10" :step="0.1" style="width: 100%" />
+            <n-input-number v-model:value="formState.editForm.value.bucketWear" :min="0" :max="10" :step="0.1" style="width: 100%" />
           </n-form-item>
         </n-grid>
         <n-divider style="margin: 8px 0" />
         <n-form-item label="隐藏此轮次">
-          <n-switch v-model:value="editForm.hidden" round />
+          <n-switch v-model:value="formState.editForm.value.hidden" round />
         </n-form-item>
         <n-form-item label="备注">
-          <n-input v-model:value="editForm.notes" type="textarea" :rows="2" />
+          <n-input v-model:value="formState.editForm.value.notes" type="textarea" :rows="2" />
         </n-form-item>
       </n-form>
       <template #footer>
         <n-space justify="end">
-          <n-button @click="showEditModal = false">取消</n-button>
+          <n-button @click="closeEditModal">取消</n-button>
           <n-button type="primary" @click="handleEditTrial">保存修改</n-button>
         </n-space>
       </template>
@@ -219,7 +219,9 @@ import { ref, computed, h, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage, useDialog, type DataTableColumns } from 'naive-ui'
 import { useSchemeStore } from '@/stores/scheme'
-import { COMPONENT_TYPE_OPTIONS, type TrialRound } from '@/types'
+import { useTrialForm } from '@/composables/useTrialForm'
+import { type TrialRound } from '@/types'
+import { getTrialEffectiveWater, getTrialEfficiency, getTrialAvgComponentWear } from '@/services/statistics.service'
 
 const schemeStore = useSchemeStore()
 const message = useMessage()
@@ -231,69 +233,22 @@ const schemeId = computed(() => route.params.id as string)
 const scheme = computed(() => schemeStore.currentScheme)
 const stats = computed(() => scheme.value ? schemeStore.getSchemeStats(scheme.value.id) : null)
 
-const showAddModal = ref(false)
-const showEditModal = ref(false)
 const addFormRef = ref()
 const editFormRef = ref()
-const editingRoundNo = ref<number>(0)
 
-const typeLabelMap: Record<string, string> = {}
-COMPONENT_TYPE_OPTIONS.forEach(o => { typeLabelMap[o.value] = o.label })
-
-const nextRoundNo = computed(() => (scheme.value?.completedRounds || 0) + 1)
-
-const initWearMap = () => {
-  const m: Record<string, number> = {}
-  scheme.value?.components.forEach(c => { m[c.id] = 0 })
-  return m
+const formState = useTrialForm(scheme)
+const openAddModal = () => {
+  if (!scheme.value?.assemblyComplete) {
+    message.error('请先完成构件装配！')
+    return
+  }
+  formState.openAddModal()
 }
-
-const emptyAddForm = () => ({
-  hidden: false,
-  timeCost: 0,
-  leakageRate: 0,
-  componentWear: initWearMap(),
-  ropeWear: 0,
-  bucketWear: 0,
-  notes: ''
-})
-
-const addForm = ref(emptyAddForm())
-
-const addRules = {
-  timeCost: [
-    { required: true, type: 'number', message: '请输入提水耗时', trigger: 'blur' },
-    {
-      validator: (_r: any, v: number) => schemeStore.isValidTimeCost(v),
-      message: '提水耗时不能小于 0',
-      trigger: 'blur'
-    }
-  ],
-  leakageRate: [
-    { required: true, type: 'number', message: '请输入漏水率', trigger: 'blur' },
-    {
-      validator: (_r: any, v: number) => schemeStore.isValidLeakageRate(v),
-      message: '漏水率必须在 0 - 100 范围内',
-      trigger: 'blur'
-    }
-  ]
+const openEditModal = (row: TrialRound) => {
+  formState.openEditModal(row)
 }
-
-const editRules = { ...addRules }
-
-const emptyEditForm = (): TrialRound => ({
-  roundNo: 0,
-  hidden: false,
-  timeCost: 0,
-  leakageRate: 0,
-  componentWear: {},
-  ropeWear: 0,
-  bucketWear: 0,
-  notes: '',
-  createdAt: 0
-})
-
-const editForm = ref<TrialRound>(emptyEditForm())
+const closeAddModal = formState.closeAddModal
+const closeEditModal = formState.closeEditModal
 
 onMounted(() => {
   schemeStore.setCurrentScheme(schemeId.value)
@@ -303,31 +258,27 @@ function goBackToConfig() {
   router.push(`/scheme/${schemeId.value}/config`)
 }
 
-function openAddModal() {
-  if (!scheme.value?.assemblyComplete) {
-    message.error('请先完成构件装配！')
-    return
-  }
-  addForm.value = emptyAddForm()
-  showAddModal.value = true
-}
-
 function handleAddTrial() {
   addFormRef.value?.validate((errors: any) => {
     if (!errors && scheme.value) {
       const res = schemeStore.addTrial(scheme.value.id, {
         roundNo: 0,
-        hidden: addForm.value.hidden,
-        timeCost: addForm.value.timeCost,
-        leakageRate: addForm.value.leakageRate,
-        componentWear: { ...addForm.value.componentWear },
-        ropeWear: addForm.value.ropeWear,
-        bucketWear: addForm.value.bucketWear,
-        notes: addForm.value.notes
+        hidden: formState.addForm.value.hidden,
+        timeCost: formState.addForm.value.timeCost,
+        leakageRate: formState.addForm.value.leakageRate,
+        componentWear: { ...formState.addForm.value.componentWear },
+        ropeWear: formState.addForm.value.ropeWear,
+        bucketWear: formState.addForm.value.bucketWear,
+        notes: formState.addForm.value.notes,
+        ropeId: scheme.value.ropes[0]?.id || null,
+        bucketId: scheme.value.buckets[0]?.id || null,
+        abnormalType: 'none',
+        abnormalReason: '',
+        reviewStatus: 'pending'
       })
       if (res.success) {
         message.success('试验记录已保存')
-        showAddModal.value = false
+        closeAddModal()
       } else {
         message.error(res.error || '保存失败')
       }
@@ -336,36 +287,24 @@ function handleAddTrial() {
 }
 
 function handleEdit(row: TrialRound) {
-  editingRoundNo.value = row.roundNo
-  editForm.value = {
-    roundNo: row.roundNo,
-    hidden: row.hidden,
-    timeCost: row.timeCost,
-    leakageRate: row.leakageRate,
-    componentWear: { ...row.componentWear },
-    ropeWear: row.ropeWear,
-    bucketWear: row.bucketWear,
-    notes: row.notes,
-    createdAt: row.createdAt
-  }
-  showEditModal.value = true
+  openEditModal(row)
 }
 
 function handleEditTrial() {
   editFormRef.value?.validate((errors: any) => {
     if (!errors && scheme.value) {
-      const res = schemeStore.updateTrial(scheme.value.id, editingRoundNo.value, {
-        hidden: editForm.value.hidden,
-        timeCost: editForm.value.timeCost,
-        leakageRate: editForm.value.leakageRate,
-        componentWear: editForm.value.componentWear,
-        ropeWear: editForm.value.ropeWear,
-        bucketWear: editForm.value.bucketWear,
-        notes: editForm.value.notes
+      const res = schemeStore.updateTrial(scheme.value.id, formState.editingRoundNo.value, {
+        hidden: formState.editForm.value.hidden,
+        timeCost: formState.editForm.value.timeCost,
+        leakageRate: formState.editForm.value.leakageRate,
+        componentWear: formState.editForm.value.componentWear,
+        ropeWear: formState.editForm.value.ropeWear,
+        bucketWear: formState.editForm.value.bucketWear,
+        notes: formState.editForm.value.notes
       })
       if (res.success) {
         message.success('修改已保存')
-        showEditModal.value = false
+        closeEditModal()
       } else {
         message.error(res.error || '保存失败')
       }
@@ -424,8 +363,8 @@ const columns: DataTableColumns<TrialRound> = [
     width: 110,
     render: (row) => {
       const bucket = scheme.value?.buckets[0]
-      if (!bucket) return '-'
-      const effective = bucket.capacity * (1 - row.leakageRate / 100)
+      const effective = bucket ? getTrialEffectiveWater(row, bucket.capacity) : null
+      if (effective == null) return '-'
       return `${effective.toFixed(2)} L`
     }
   },
@@ -434,11 +373,9 @@ const columns: DataTableColumns<TrialRound> = [
     key: 'efficiency',
     width: 110,
     render: (row) => {
-      if (row.timeCost <= 0) return '-'
       const bucket = scheme.value?.buckets[0]
-      if (!bucket) return '-'
-      const eff = (bucket.capacity * (1 - row.leakageRate / 100)) / row.timeCost
-      return eff.toFixed(3)
+      const eff = bucket ? getTrialEfficiency(row, bucket.capacity) : null
+      return eff == null ? '-' : eff.toFixed(3)
     }
   },
   { title: '井绳磨损', key: 'ropeWear', width: 100 },
@@ -448,10 +385,8 @@ const columns: DataTableColumns<TrialRound> = [
     key: 'avgCompWear',
     width: 130,
     render: (row) => {
-      const vals = Object.values(row.componentWear)
-      if (vals.length === 0) return '-'
-      const avg = vals.reduce((a, b) => a + b, 0) / vals.length
-      return avg.toFixed(2)
+      const avg = getTrialAvgComponentWear(row)
+      return avg == null ? '-' : avg.toFixed(2)
     }
   },
   {
